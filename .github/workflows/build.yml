@@ -17,9 +17,9 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Restore native QWERTZ source files
+      - name: Copy native QWERTZ runtime sources
         run: |
-          unzip -o native-qwertz-source.zip -d .
+          mkdir -p patches/src/main/native/qwertz
           cp native/QwertzSettingsActivity.java patches/src/main/native/qwertz/QwertzSettingsActivity.java
           cp native/QwertzLayoutRuntime.java patches/src/main/native/qwertz/QwertzLayoutRuntime.java
 
