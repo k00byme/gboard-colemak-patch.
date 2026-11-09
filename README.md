@@ -14,7 +14,11 @@ Edite as três fileiras:
 | Do meio | 9 | `asdfghjkl` |
 | Inferior | 7 | `yxcvbnm` |
 
-As três sequências juntas precisam conter cada letra de `a` a `z` exatamente uma vez. Depois de editar as três fileiras, toque em **Aplicar e reiniciar Gboard**. O botão grava as três sequências e reinicia o processo do Gboard, para que o mapeamento em cache seja reconstruído com os novos valores.
+As três sequências juntas precisam conter cada letra de `a` a `z` exatamente uma vez. Toque em **Aplicar e reiniciar Gboard** depois de editar as fileiras.
+
+## Diagnóstico
+
+A tela do editor mostra **Diagnóstico do layout**. Abra um campo de texto para o Gboard montar o teclado e, em seguida, volte às configurações do editor. O diagnóstico informa se o runtime realmente encontrou e remapeou os grupos de teclas, ou por que não conseguiu.
 
 ## Compatibilidade
 
@@ -26,4 +30,4 @@ O patch reconhece e modifica apenas o mapeamento QWERTZ original. Outros layouts
 
 ## Compilação
 
-O GitHub Actions restaura o código-fonte nativo do pacote `native-qwertz-source.zip`, compila a tela e o runtime para DEX, incorpora a extensão ao patch Morphe e publica o `.mpp` como artefato.
+O GitHub Actions restaura o código-fonte nativo, compila a tela e o runtime para DEX, incorpora a extensão ao patch Morphe e publica o `.mpp` como artefato.
