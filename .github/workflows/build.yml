@@ -53,17 +53,14 @@ jobs:
           from pathlib import Path
           path = Path("patches/src/main/native/qwertz/QwertzSettingsActivity.java")
           source = path.read_text()
-          old = """        preference.setOnPreferenceChangeListener((item, newValue) -> {
-                      String value = String.valueOf(newValue).toLowerCase(Locale.ROOT);
-                      if (!isValidRow(value, expectedLength)) {
-                          Toast.makeText(this,
-                                  "Digite " + expectedLength + " letras diferentes, sem espaços.",
-                                  Toast.LENGTH_LONG).show();
-                          return false;
-                      }
-                      return true;
-                  });"""
-          new = """        preference.setOnPreferenceChangeListener(new Preference.OnPreferenceChangeListener() {
+          start = source.find("        preference.setOnPreferenceChangeListener(")
+          if start >= 0:
+              end_marker = "        });"
+              end = source.find(end_marker, start)
+              if end < 0:
+                  raise SystemExit("Could not find the end of the preference listener")
+              end += len(end_marker)
+              replacement = """        preference.setOnPreferenceChangeListener(new Preference.OnPreferenceChangeListener() {
                       @Override
                       public boolean onPreferenceChange(Preference item, Object newValue) {
                           String value = String.valueOf(newValue).toLowerCase(Locale.ROOT);
@@ -76,10 +73,9 @@ jobs:
                           return true;
                       }
                   });"""
-          if old in source:
-              path.write_text(source.replace(old, new))
+              path.write_text(source[:start] + replacement + source[end:])
           elif "new Preference.OnPreferenceChangeListener()" not in source:
-              raise SystemExit("Could not safely replace the unsupported preference listener")
+              raise SystemExit("Could not safely locate the preference listener")
           PY
           mkdir -p build/qwertz/classes build/qwertz/dex patches/src/main/resources/extensions
           javac -encoding UTF-8 -source 8 -target 8 \
