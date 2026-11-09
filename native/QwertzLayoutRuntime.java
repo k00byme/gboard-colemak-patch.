@@ -9,6 +9,7 @@ import android.util.SparseArray;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.Locale;
@@ -58,6 +59,7 @@ public final class QwertzLayoutRuntime {
         int resolvedEntries = 0;
         int changedGroups = 0;
         int inspectedFields = 0;
+        StringBuilder structure = new StringBuilder();
         try {
             application = currentApplication();
             String[] rows = readRows(application);
@@ -85,6 +87,9 @@ public final class QwertzLayoutRuntime {
                     sparseArrays++;
                     SparseArray<?> mappings = (SparseArray<?>) value;
                     resolvedEntries += countResolvableEntries(mappings);
+                    if (structure.length() < 1800) {
+                        structure.append(describeSparseArray(field.getName(), mappings));
+                    }
                     if (remapIfStock(mappings, LOWERCASE_KEY_IDS, rows) ||
                             remapIfStock(mappings, UPPERCASE_KEY_IDS, rows)) {
                         changedGroups++;
@@ -102,7 +107,8 @@ public final class QwertzLayoutRuntime {
                         inspectedFields + " campos inspecionados).";
             } else if (resolvedEntries == 0) {
                 status = "NÃO APLICADO: " + sparseArrays + " SparseArray(s), mas nenhum " +
-                        "SoftKeyDef reconhecido pelos IDs desta versão.";
+                        "SoftKeyDef reconhecido pelos IDs desta versão. Estrutura: " +
+                        structure.toString();
             } else {
                 status = "NÃO APLICADO: " + sparseArrays + " SparseArray(s) e " +
                         resolvedEntries + " entradas reconhecidas, mas a estrutura não " +
@@ -192,26 +198,63 @@ public final class QwertzLayoutRuntime {
     }
 
     private static int findKnownId(Object value, int depth, IdentityHashMap<Object, Boolean> visited) {
-        if (value == null || depth > 5 || visited.containsKey(value)) return 0;
+        if (value == null || depth > 9 || visited.containsKey(value)) return 0;
         visited.put(value, Boolean.TRUE);
+
         if (value instanceof Integer) {
             int id = ((Integer) value).intValue();
             return isKnownSoftKeyId(id) ? id : 0;
         }
+
         Class<?> valueType = value.getClass();
+        String className = valueType.getName();
+        if (className.equals("com.google.android.libraries.inputmethod.metadata.SoftKeyDef")) {
+            int direct = readSoftKeyIdField(value);
+            if (direct != 0) return direct;
+        }
+
+        if (value instanceof SparseArray) {
+            SparseArray<?> array = (SparseArray<?>) value;
+            for (int i = 0; i < array.size() && i < 64; i++) {
+                int found = findKnownId(array.valueAt(i), depth + 1, visited);
+                if (found != 0) return found;
+            }
+            return 0;
+        }
+
+        if (value instanceof Map) {
+            int scanned = 0;
+            for (Object nested : ((Map<?, ?>) value).values()) {
+                if (scanned++ >= 64) break;
+                int found = findKnownId(nested, depth + 1, visited);
+                if (found != 0) return found;
+            }
+            return 0;
+        }
+
+        if (value instanceof Iterable) {
+            int scanned = 0;
+            for (Object nested : (Iterable<?>) value) {
+                if (scanned++ >= 64) break;
+                int found = findKnownId(nested, depth + 1, visited);
+                if (found != 0) return found;
+            }
+            return 0;
+        }
+
         if (valueType.isArray()) {
-            if (!valueType.getComponentType().isPrimitive() && depth < 5) {
+            if (!valueType.getComponentType().isPrimitive()) {
                 Object[] values = (Object[]) value;
-                for (int i = 0; i < values.length && i < 16; i++) {
+                for (int i = 0; i < values.length && i < 64; i++) {
                     int found = findKnownId(values[i], depth + 1, visited);
                     if (found != 0) return found;
                 }
             }
             return 0;
         }
-        if (value instanceof SparseArray || value instanceof CharSequence ||
-                value instanceof Class || value instanceof ClassLoader ||
-                value instanceof Context) return 0;
+
+        if (value instanceof CharSequence || value instanceof Class ||
+                value instanceof ClassLoader || value instanceof Context) return 0;
 
         Class<?> current = valueType;
         while (current != null && current != Object.class) {
@@ -227,18 +270,81 @@ public final class QwertzLayoutRuntime {
                         if (boxed instanceof Integer && isKnownSoftKeyId(((Integer) boxed).intValue())) {
                             return ((Integer) boxed).intValue();
                         }
-                    } else if (!field.getType().isPrimitive() && depth < 5) {
+                    } else if (!field.getType().isPrimitive()) {
                         Object nested = field.get(value);
                         int found = findKnownId(nested, depth + 1, visited);
                         if (found != 0) return found;
                     }
                 } catch (Throwable ignored) {
-                    // Continue through other fields; hidden or synthetic internals may be inaccessible.
+                    // Continue through other fields; some framework internals are hidden.
                 }
             }
             current = current.getSuperclass();
         }
         return 0;
+    }
+
+    private static int readSoftKeyIdField(Object value) {
+        Class<?> current = value.getClass();
+        while (current != null && current != Object.class) {
+            try {
+                Field keyId = current.getDeclaredField("f");
+                keyId.setAccessible(true);
+                if (keyId.getType() == Integer.TYPE) {
+                    int id = keyId.getInt(value);
+                    return isKnownSoftKeyId(id) ? id : 0;
+                }
+            } catch (Throwable ignored) {
+                // Fall back to scanning the other integer fields below.
+            }
+            current = current.getSuperclass();
+        }
+        return 0;
+    }
+
+    private static String describeSparseArray(String fieldName, SparseArray<?> array) {
+        StringBuilder result = new StringBuilder();
+        result.append(fieldName).append("(size=").append(array.size()).append(", keys=");
+        result.append("[");
+        for (int i = 0; i < array.size() && i < 6; i++) {
+            if (i > 0) result.append(",");
+            result.append("0x").append(Integer.toHexString(array.keyAt(i)));
+        }
+        result.append("], values=[");
+        for (int i = 0; i < array.size() && i < 3; i++) {
+            if (i > 0) result.append(",");
+            Object value = array.valueAt(i);
+            result.append(value == null ? "null" : describeObject(value));
+        }
+        result.append("]); ");
+        return result.toString();
+    }
+
+    private static String describeObject(Object value) {
+        StringBuilder result = new StringBuilder();
+        Class<?> type = value.getClass();
+        result.append(type.getName()).append("{");
+        int count = 0;
+        Class<?> current = type;
+        while (current != null && current != Object.class && count < 10) {
+            for (Field field : current.getDeclaredFields()) {
+                if (Modifier.isStatic(field.getModifiers()) || field.isSynthetic()) continue;
+                if (count >= 10) break;
+                if (count++ > 0) result.append(",");
+                result.append(field.getName()).append(":").append(field.getType().getSimpleName());
+                if (field.getType() == Integer.TYPE) {
+                    try {
+                        field.setAccessible(true);
+                        result.append("=0x").append(Integer.toHexString(field.getInt(value)));
+                    } catch (Throwable ignored) {
+                        result.append("=?");
+                    }
+                }
+            }
+            current = current.getSuperclass();
+        }
+        result.append("}");
+        return result.toString();
     }
 
     private static boolean isKnownSoftKeyId(int id) {
