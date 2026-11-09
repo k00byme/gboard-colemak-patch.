@@ -78,11 +78,10 @@ val removeSemicolonFromColemakPatch = resourcePatch(
         // private copy of p4t.xml so the generic Latin layouts are not changed.
         document("res/q1a.xml").use { colemakGroup ->
             val merges = colemakGroup.documentElement.descendantsAndSelf().filter {
-                it.tagName == "merge" &&
-                    it.refEquals("def", ORIGINAL_COLEMAK_FRAMEWORK)
+                it.tagName == "merge"
             }
             check(merges.size == 1) {
-                "Expected one Colemak framework merge in res/q1a.xml; found ${merges.size}."
+                "Expected exactly one merge element in Colemak res/q1a.xml; found ${merges.size}."
             }
             merges.single().setAttribute("def", CUSTOM_COLEMAK_FRAMEWORK)
         }
