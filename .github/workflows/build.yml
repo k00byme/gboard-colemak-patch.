@@ -49,6 +49,38 @@ jobs:
           set -euo pipefail
           test -f "$ANDROID_HOME/platforms/android-35/android.jar"
           test -x "$ANDROID_HOME/build-tools/35.0.0/d8"
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("patches/src/main/native/qwertz/QwertzSettingsActivity.java")
+          source = path.read_text()
+          old = """        preference.setOnPreferenceChangeListener((item, newValue) -> {
+                      String value = String.valueOf(newValue).toLowerCase(Locale.ROOT);
+                      if (!isValidRow(value, expectedLength)) {
+                          Toast.makeText(this,
+                                  "Digite " + expectedLength + " letras diferentes, sem espaços.",
+                                  Toast.LENGTH_LONG).show();
+                          return false;
+                      }
+                      return true;
+                  });"""
+          new = """        preference.setOnPreferenceChangeListener(new Preference.OnPreferenceChangeListener() {
+                      @Override
+                      public boolean onPreferenceChange(Preference item, Object newValue) {
+                          String value = String.valueOf(newValue).toLowerCase(Locale.ROOT);
+                          if (!isValidRow(value, expectedLength)) {
+                              Toast.makeText(QwertzSettingsActivity.this,
+                                      "Digite " + expectedLength + " letras diferentes, sem espaços.",
+                                      Toast.LENGTH_LONG).show();
+                              return false;
+                          }
+                          return true;
+                      }
+                  });"""
+          if old in source:
+              path.write_text(source.replace(old, new))
+          elif "new Preference.OnPreferenceChangeListener()" not in source:
+              raise SystemExit("Could not safely replace the unsupported preference listener")
+          PY
           mkdir -p build/qwertz/classes build/qwertz/dex patches/src/main/resources/extensions
           javac -encoding UTF-8 -source 8 -target 8 \
             -bootclasspath "$ANDROID_HOME/platforms/android-35/android.jar" \
