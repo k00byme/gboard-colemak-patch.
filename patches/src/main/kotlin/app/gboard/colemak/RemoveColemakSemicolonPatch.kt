@@ -93,14 +93,17 @@ val removeSemicolonFromColemakPatch = resourcePatch(
         document("res/p4t.xml").use { stockFramework ->
             document("res/kEq.xml").use { customFramework ->
                 val root = customFramework.replaceRootFrom(stockFramework)
-                val matches = root.descendantsAndSelf().filter {
-                    it.tagName == "include" &&
-                        it.refEquals("href", ORIGINAL_COLEMAK_ROOT)
-                }
-                check(matches.size == 1) {
-                    "Expected one phone root include in the Colemak framework; found ${matches.size}."
-                }
-                matches.single().setAttribute("href", CUSTOM_COLEMAK_ROOT)
+                // In p4t.xml the normal-phone root is the sole include
+                // inside the nested <else> branch following the tablet branch.
+                // Select it by structure rather than decoded resource IDs:
+                // Morphe may expose binary XML references in a different form.
+                val outerElse = root.children().firstOrNull { it.tagName == "else" }
+                    ?: error("Could not find the phone framework else branch in res/p4t.xml.")
+                val phoneBranch = outerElse.children().firstOrNull { it.tagName == "else" }
+                    ?: error("Could not find the normal-phone else branch in res/p4t.xml.")
+                val phoneRoot = phoneBranch.children().singleOrNull { it.tagName == "include" }
+                    ?: error("Could not uniquely identify the normal-phone root include in res/p4t.xml.")
+                phoneRoot.setAttribute("href", CUSTOM_COLEMAK_ROOT)
             }
         }
 
