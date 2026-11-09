@@ -18,8 +18,19 @@ private val gboardCompatibility = Compatibility(
 private const val COLEMAK_SEMICOLON_KEY = "@0x7f0b239f"
 private const val COLEMAK_SHIFT_SEMICOLON_KEY = "@0x7f0b0ccc"
 private const val COLEMAK_LAST_VIEW = "@0x7f0b0045"
+
+private const val ORIGINAL_COLEMAK_FRAMEWORK = "@0x7f17073d"
+private const val CUSTOM_COLEMAK_FRAMEWORK = "@0x7f170000"
+private const val ORIGINAL_COLEMAK_ROOT = "@0x7f17073e"
+private const val CUSTOM_COLEMAK_ROOT = "@0x7f170001"
+private const val ORIGINAL_COLEMAK_SOFTKEYS = "@0x7f170f92"
+private const val CUSTOM_COLEMAK_SOFTKEYS = "@0x7f170003"
+private const val ORIGINAL_COLEMAK_MAPPINGS = "@0x7f170aa9"
+private const val CUSTOM_COLEMAK_MAPPINGS = "@0x7f170004"
+
 private const val ORIGINAL_PORTRAIT_LAYOUT = "@0x7f0e02c2"
 private const val COLEMAK_PORTRAIT_LAYOUT = "@0x7f0e0000"
+private const val ORIGINAL_TOP_ROW_LAYOUT = "@0x7f0e02c8"
 private const val COLEMAK_TOP_ROW_LAYOUT = "@0x7f0e0019"
 private const val EXPANDED_KEY_WEIGHT = "0x42de38e4" // 111.1111f
 
@@ -32,6 +43,12 @@ private fun Element.children(): List<Element> {
     return result
 }
 
+private fun Element.descendantsAndSelf(): List<Element> {
+    val result = mutableListOf(this)
+    children().forEach { result += it.descendantsAndSelf() }
+    return result
+}
+
 private fun Document.replaceRootFrom(source: Document): Element {
     val imported = importNode(source.documentElement, true) as Element
     replaceChild(imported, documentElement)
@@ -39,92 +56,157 @@ private fun Document.replaceRootFrom(source: Document): Element {
 }
 
 /**
- * Removes Colemak's semicolon key and reflows the 9 remaining top-row letters
- * to occupy the full original row width. QWERTY and other layouts retain their
- * original 10-key geometry. The ?123 symbols resources are not changed.
+ * Patches only the Colemak framework chain. Shared QWERTY resources remain
+ * untouched, and the semicolon key remains available in the symbols keyboard.
  */
 @Suppress("unused")
 val removeSemicolonFromColemakPatch = resourcePatch(
     name = "Colemak: remove ; and fill the row",
-    description = "Removes the Colemak semicolon and expands the nine remaining top-row keys evenly across the full row. The ?123 symbols keyboard is unchanged.",
+    description = "Removes the Colemak semicolon and expands the nine remaining top-row keys evenly across the full row. Other layouts and the ?123 keyboard remain unchanged.",
     default = true,
 ) {
     compatibleWith(gboardCompatibility)
 
     execute {
-        // Remove the semicolon softkey data from Colemak's punctuation resource.
-        document("res/PWn.xml").use { xml ->
-            val matches = mutableListOf<Element>()
-            val softkeys = xml.getElementsByTagName("softkey")
-            for (i in 0 until softkeys.length) {
-                val key = softkeys.item(i) as? Element ?: continue
-                if (
-                    key.getAttribute("id") == COLEMAK_SEMICOLON_KEY &&
-                    key.getAttribute("press_data") == ";"
-                ) matches += key
+        // q1a.xml is the Colemak-only keyboard group. Redirect its merge to a
+        // private copy of p4t.xml so the generic Latin layouts are not changed.
+        document("res/q1a.xml").use { colemakGroup ->
+            val merges = colemakGroup.documentElement.descendantsAndSelf().filter {
+                it.tagName == "merge" &&
+                    it.getAttribute("def") == ORIGINAL_COLEMAK_FRAMEWORK
             }
-            check(matches.size <= 1) {
-                "Expected at most one Colemak semicolon softkey in res/PWn.xml; found ${matches.size}."
+            check(merges.size == 1) {
+                "Expected one Colemak framework merge in res/q1a.xml; found ${merges.size}."
             }
-            // A previous semicolon-only patch may already have removed this entry.
-            // In that case, continue with the row geometry update.
-            matches.singleOrNull()?.let { it.parentNode.removeChild(it) }
+            merges.single().setAttribute("def", CUSTOM_COLEMAK_FRAMEWORK)
         }
 
-        // Remove normal and shifted mappings for the now-absent semicolon key.
-        // These are separate mapping resources used by Colemak variants.
-        for (path in listOf("res/VQ-.xml", "res/hYu.xml")) {
-            document(path).use { xml ->
-                val mappings = xml.getElementsByTagName("mapping")
-                val matches = mutableListOf<Element>()
-                for (i in 0 until mappings.length) {
-                    val mapping = mappings.item(i) as? Element ?: continue
-                    val keyId = mapping.getAttribute("key_id")
-                    val viewId = mapping.getAttribute("view_id")
-                    if (
-                        viewId == COLEMAK_LAST_VIEW &&
-                        (keyId == COLEMAK_SEMICOLON_KEY || keyId == COLEMAK_SHIFT_SEMICOLON_KEY)
-                    ) matches += mapping
+        // Clone p4t.xml and redirect only its normal-phone branch to a private
+        // copy of rpH.xml. Its tablet branch is left as stock.
+        document("res/p4t.xml").use { stockFramework ->
+            document("res/kEq.xml").use { customFramework ->
+                val root = customFramework.replaceRootFrom(stockFramework)
+                val matches = root.descendantsAndSelf().filter {
+                    it.tagName == "include" &&
+                        it.getAttribute("href") == ORIGINAL_COLEMAK_ROOT
                 }
-                // These mappings may already be absent when upgrading from the
-                // earlier semicolon-removal patch. Remove whichever remain.
+                check(matches.size == 1) {
+                    "Expected one phone root include in the Colemak framework; found ${matches.size}."
+                }
+                matches.single().setAttribute("href", CUSTOM_COLEMAK_ROOT)
+            }
+        }
+
+        // Clone the Colemak phone root and point it to private copies of its
+        // key data, mapping data, and portrait layout.
+        document("res/rpH.xml").use { stockRoot ->
+            document("res/Ktm.xml").use { customRoot ->
+                val root = customRoot.replaceRootFrom(stockRoot)
+
+                val softkeys = root.descendantsAndSelf().filter {
+                    it.tagName == "softkeys" &&
+                        it.getAttribute("href") == ORIGINAL_COLEMAK_SOFTKEYS
+                }
+                check(softkeys.size == 1) {
+                    "Expected one Colemak softkey reference; found ${softkeys.size}."
+                }
+                softkeys.single().setAttribute("href", CUSTOM_COLEMAK_SOFTKEYS)
+
+                val mappings = root.descendantsAndSelf().filter {
+                    it.tagName == "include" &&
+                        it.getAttribute("href") == ORIGINAL_COLEMAK_MAPPINGS
+                }
+                check(mappings.size == 1) {
+                    "Expected one Colemak mapping reference; found ${mappings.size}."
+                }
+                mappings.single().setAttribute("href", CUSTOM_COLEMAK_MAPPINGS)
+
+                val portraitViews = root.descendantsAndSelf().filter {
+                    it.tagName == "view" &&
+                        (it.getAttribute("layout") == ORIGINAL_PORTRAIT_LAYOUT ||
+                            it.getAttribute("layout") == COLEMAK_PORTRAIT_LAYOUT)
+                }
+                check(portraitViews.size == 1) {
+                    "Expected one normal portrait view in the Colemak root; found ${portraitViews.size}."
+                }
+                portraitViews.single().setAttribute("layout", COLEMAK_PORTRAIT_LAYOUT)
+            }
+        }
+
+        // Copy the softkey definition before removing the semicolon, so no
+        // language or keyboard using the shared original definition is affected.
+        document("res/PWn.xml").use { stockSoftkeys ->
+            document("res/R3H.xml").use { customSoftkeys ->
+                val root = customSoftkeys.replaceRootFrom(stockSoftkeys)
+                val matches = root.descendantsAndSelf().filter {
+                    it.tagName == "softkey" &&
+                        it.getAttribute("id") == COLEMAK_SEMICOLON_KEY &&
+                        it.getAttribute("press_data") == ";"
+                }
+                check(matches.size == 1) {
+                    "Expected one Colemak semicolon softkey; found ${matches.size}."
+                }
+                matches.single().parentNode.removeChild(matches.single())
+            }
+        }
+
+        // Copy the Colemak mapping definition and remove only its normal and
+        // shifted semicolon mappings for the physical last key in the row.
+        document("res/VQ-.xml").use { stockMappings ->
+            document("res/1Zr.xml").use { customMappings ->
+                val root = customMappings.replaceRootFrom(stockMappings)
+                val matches = root.descendantsAndSelf().filter {
+                    it.tagName == "mapping" &&
+                        it.getAttribute("view_id") == COLEMAK_LAST_VIEW &&
+                        (it.getAttribute("key_id") == COLEMAK_SEMICOLON_KEY ||
+                            it.getAttribute("key_id") == COLEMAK_SHIFT_SEMICOLON_KEY)
+                }
+                check(matches.map { it.getAttribute("key_id") }.toSet() ==
+                    setOf(COLEMAK_SEMICOLON_KEY, COLEMAK_SHIFT_SEMICOLON_KEY)
+                ) {
+                    "Expected normal and shifted semicolon mappings in the Colemak mapping copy."
+                }
                 matches.forEach { it.parentNode.removeChild(it) }
             }
         }
 
-        // Clone the stock portrait keyboard layout into two existing, unused
-        // layout resource IDs. This keeps the geometry change exclusive to
-        // Colemak instead of widening QWERTY and every other keyboard.
-        document("res/kyi.xml").use { stockRoot ->
-            document("res/A19.xml").use { customRoot ->
-                val root = customRoot.replaceRootFrom(stockRoot)
-                val rowInclude = root.getElementsByTagName("include")
-                var replaced = false
-                for (i in 0 until rowInclude.length) {
-                    val include = rowInclude.item(i) as? Element ?: continue
-                    if (include.getAttribute("layout") == "@0x7f0e02c8") {
-                        include.setAttribute("layout", COLEMAK_TOP_ROW_LAYOUT)
-                        replaced = true
-                        break
-                    }
+        // Clone the stock portrait root and redirect its first row include.
+        document("res/kyi.xml").use { stockLayout ->
+            document("res/A19.xml").use { customLayout ->
+                val root = customLayout.replaceRootFrom(stockLayout)
+                val rowContainer = root.children().firstOrNull {
+                    it.tagName == "LinearLayout"
+                } ?: error("Could not find the keyboard row container in res/kyi.xml.")
+                val rowIncludes = rowContainer.children().filter {
+                    it.tagName == "include" && it.hasAttribute("layout")
                 }
-                check(replaced) { "Could not locate the stock top-row layout include in res/kyi.xml." }
+                check(rowIncludes.size == 2) {
+                    "Expected the two row includes in res/kyi.xml; found ${rowIncludes.size}."
+                }
+                check(
+                    rowIncludes.first().getAttribute("layout") == ORIGINAL_TOP_ROW_LAYOUT ||
+                        rowIncludes.first().getAttribute("layout") == COLEMAK_TOP_ROW_LAYOUT
+                ) {
+                    "The first row include in res/kyi.xml was not the expected top-row layout."
+                }
+                rowIncludes.first().setAttribute("layout", COLEMAK_TOP_ROW_LAYOUT)
             }
         }
 
-        // Clone the stock key rows, remove the physical semicolon slot, and
-        // distribute its width evenly over the nine remaining top-row keys.
+        // Clone the stock key rows, remove the physical semicolon slot, then
+        // distribute its width evenly across the nine remaining top-row keys.
         document("res/dg2.xml").use { stockRows ->
             document("res/dO-.xml").use { customRows ->
                 val root = customRows.replaceRootFrom(stockRows)
-                val rowLayouts = root.getElementsByTagName("LinearLayout")
-                check(rowLayouts.length >= 2) { "Unexpected keyboard row layout in res/dg2.xml." }
-                val topRow = rowLayouts.item(1) as Element
+                val topRow = root.children().firstOrNull {
+                    it.tagName == "LinearLayout"
+                } ?: error("Could not find the top key row in res/dg2.xml.")
+
                 val semicolonViews = topRow.children().filter {
                     it.getAttribute("id") == COLEMAK_LAST_VIEW
                 }
                 check(semicolonViews.size == 1) {
-                    "Expected exactly one Colemak semicolon view in the top row; found ${semicolonViews.size}."
+                    "Expected one Colemak semicolon view in the top row; found ${semicolonViews.size}."
                 }
                 topRow.removeChild(semicolonViews.single())
 
@@ -132,27 +214,10 @@ val removeSemicolonFromColemakPatch = resourcePatch(
                     it.tagName == "com.google.android.libraries.inputmethod.widgets.SoftKeyView"
                 }
                 check(letterViews.size == 9) {
-                    "Expected nine remaining top-row keys after removing semicolon; found ${letterViews.size}."
+                    "Expected nine remaining top-row keys; found ${letterViews.size}."
                 }
                 letterViews.forEach { it.setAttribute("layout_weight", EXPANDED_KEY_WEIGHT) }
             }
-        }
-
-        // Select the custom 9-key portrait layout only for this Colemak keyboard.
-        document("res/rpH.xml").use { xml ->
-            val views = xml.getElementsByTagName("view")
-            val matches = mutableListOf<Element>()
-            for (i in 0 until views.length) {
-                val view = views.item(i) as? Element ?: continue
-                val layout = view.getAttribute("layout")
-                if (layout == ORIGINAL_PORTRAIT_LAYOUT || layout == COLEMAK_PORTRAIT_LAYOUT) {
-                    matches += view
-                }
-            }
-            check(matches.size == 1) {
-                "Expected exactly one normal or already-patched portrait keyboard view in res/rpH.xml; found ${matches.size}."
-            }
-            matches.single().setAttribute("layout", COLEMAK_PORTRAIT_LAYOUT)
         }
     }
 }
