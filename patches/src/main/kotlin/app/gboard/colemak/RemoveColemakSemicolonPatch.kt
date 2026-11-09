@@ -20,7 +20,7 @@ private const val COLEMAK_SHIFT_SEMICOLON_KEY = "@0x7f0b0ccc"
 private const val COLEMAK_LAST_VIEW = "@0x7f0b0045"
 private const val ORIGINAL_PORTRAIT_LAYOUT = "@0x7f0e02c2"
 private const val COLEMAK_PORTRAIT_LAYOUT = "@0x7f0e0000"
-private const val COLEMAK_TOP_ROW_LAYOUT = "@0x7f0e0026"
+private const val COLEMAK_TOP_ROW_LAYOUT = "@0x7f0e0019"
 private const val EXPANDED_KEY_WEIGHT = "0x42de38e4" // 111.1111f
 
 private fun Element.children(): List<Element> {
@@ -116,7 +116,7 @@ val removeSemicolonFromColemakPatch = resourcePatch(
         // Clone the stock key rows, remove the physical semicolon slot, and
         // distribute its width evenly over the nine remaining top-row keys.
         document("res/dg2.xml").use { stockRows ->
-            document("res/zzH.xml").use { customRows ->
+            document("res/dO-.xml").use { customRows ->
                 val root = customRows.replaceRootFrom(stockRows)
                 val rowLayouts = root.getElementsByTagName("LinearLayout")
                 check(rowLayouts.length >= 2) { "Unexpected keyboard row layout in res/dg2.xml." }
