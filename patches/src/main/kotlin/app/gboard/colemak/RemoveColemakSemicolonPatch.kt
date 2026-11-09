@@ -39,27 +39,8 @@ private val uppercaseKeyIds = listOf(
     "@0x7f0b1857", "@0x7f0b1853",
 )
 
-private val topRowViews = listOf(
-    "@0x7f0b0039", "@0x7f0b003a", "@0x7f0b003b", "@0x7f0b003c",
-    "@0x7f0b003e", "@0x7f0b0040", "@0x7f0b0042", "@0x7f0b0043",
-    "@0x7f0b0044", "@0x7f0b0045",
-)
-
-private val middleRowViews = listOf(
-    "@0x7f0b0024", "@0x7f0b0025", "@0x7f0b0026", "@0x7f0b0027",
-    "@0x7f0b0029", "@0x7f0b002b", "@0x7f0b002d", "@0x7f0b002e",
-    "@0x7f0b002f",
-)
-
-private val bottomRowViews = listOf(
-    "@0x7f0b000e", "@0x7f0b000f", "@0x7f0b0011", "@0x7f0b0013",
-    "@0x7f0b0015", "@0x7f0b0017", "@0x7f0b0018",
-)
-
-// The split layout mirrors the centre letter on both sides of its gap.
-private const val SPLIT_HOME_DUPLICATE_VIEW = "@0x7f0b002a"
-private const val SPLIT_BOTTOM_DUPLICATE_VIEW = "@0x7f0b0014"
-
+// In the stock QWERTZ XML, letter mappings are ordered by physical row.
+// The two duplicated split-mode keys follow the 26 normal letter mappings.
 private fun Element.children(): List<Element> {
     val result = mutableListOf<Element>()
     for (i in 0 until childNodes.length) {
@@ -68,9 +49,6 @@ private fun Element.children(): List<Element> {
     }
     return result
 }
-
-private fun normalizeResourceId(value: String): String =
-    value.trim().removePrefix("@").removePrefix("0x").lowercase()
 
 private fun isValidRow(value: String?, expectedLength: Int): Boolean {
     if (value == null || value.length != expectedLength) return false
@@ -119,12 +97,8 @@ val customizeQwertzLayoutPatch = resourcePatch(
             "The three rows must contain every letter from a to z exactly once."
         }
 
-        val positions = listOf(topRowViews, middleRowViews, bottomRowViews)
-        check(positions.map { it.size } == listOf(10, 9, 7)) {
-            "The expected QWERTZ keyboard rows (10/9/7 keys) were not found."
-        }
-
         val letterToIndex = DEFAULT_LAYOUT.withIndex().associate { it.value to it.index }
+        val customLetters = rows.joinToString("") + rows[1][4] + rows[2][3]
 
         document("res/cZ-.xml").use { mappingDocument ->
             val groups = mappingDocument.documentElement.children()
@@ -139,29 +113,26 @@ val customizeQwertzLayoutPatch = resourcePatch(
                 val keyIds = if (isUppercase) uppercaseKeyIds else lowercaseKeyIds
                 val directMappings = group.children().filter { it.tagName == "mapping" }
 
-                fun update(viewId: String, letter: Char) {
-                    val matches = directMappings.filter {
-                        normalizeResourceId(it.getAttribute("view_id")) ==
-                            normalizeResourceId(viewId)
-                    }
-                    check(matches.size == 1) {
-                        "Expected exactly one QWERTZ mapping for view $viewId; found ${matches.size}."
-                    }
+                // The normal group stores 26 letters, then the two split-mode
+                // duplicate keys, followed by one unrelated mapping.
+                // The shifted group has one extra non-letter mapping before
+                // the bottom row, so its letter indices skip slot 19.
+                val letterSlots = if (isUppercase) {
+                    (0..18).toList() + (20..28).toList()
+                } else {
+                    (0..27).toList()
+                }
 
-                    val index = letterToIndex[letter]
+                check(directMappings.size == 29 && letterSlots.size == customLetters.length) {
+                    "Unexpected QWERTZ mapping structure: ${directMappings.size} mappings."
+                }
+
+                letterSlots.forEachIndexed { letterIndex, mappingIndex ->
+                    val letter = customLetters[letterIndex]
+                    val keyIndex = letterToIndex[letter]
                         ?: error("Unsupported letter in custom layout: $letter")
-                    matches.single().setAttribute("key_id", keyIds[index])
+                    directMappings[mappingIndex].setAttribute("key_id", keyIds[keyIndex])
                 }
-
-                rows.forEachIndexed { rowIndex, row ->
-                    row.forEachIndexed { letterIndex, letter ->
-                        update(positions[rowIndex][letterIndex], letter)
-                    }
-                }
-
-                // Keep the duplicated centre keys aligned in split mode.
-                update(SPLIT_HOME_DUPLICATE_VIEW, rows[1][4])
-                update(SPLIT_BOTTOM_DUPLICATE_VIEW, rows[2][3])
             }
         }
     }
