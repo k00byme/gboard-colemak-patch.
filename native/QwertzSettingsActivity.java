@@ -20,7 +20,9 @@ public final class QwertzSettingsActivity extends PreferenceActivity {
     private static final String KEY_TOP = "qwertz_top_row";
     private static final String KEY_MIDDLE = "qwertz_middle_row";
     private static final String KEY_BOTTOM = "qwertz_bottom_row";
-    private static final String PREFERENCES_NAME = "com.google.android.inputmethod.latin_preferences";
+    private static final String KEY_RUNTIME_STATUS = "qwertz_runtime_status";
+
+    private Preference runtimeStatusPreference;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -53,6 +55,11 @@ public final class QwertzSettingsActivity extends PreferenceActivity {
         });
         rows.addPreference(apply);
 
+        runtimeStatusPreference = new Preference(this);
+        runtimeStatusPreference.setTitle("Diagnóstico do layout");
+        runtimeStatusPreference.setSelectable(false);
+        rows.addPreference(runtimeStatusPreference);
+
         Preference rule = new Preference(this);
         rule.setTitle("Regra de validação");
         rule.setSummary("Use todas as letras de a a z exatamente uma vez. Depois de editar as três fileiras, toque em Aplicar e reiniciar Gboard.");
@@ -60,6 +67,21 @@ public final class QwertzSettingsActivity extends PreferenceActivity {
         rows.addPreference(rule);
 
         setPreferenceScreen(screen);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        refreshRuntimeStatus();
+    }
+
+    private void refreshRuntimeStatus() {
+        if (runtimeStatusPreference == null) return;
+        SharedPreferences preferences = getSharedPreferences(
+                getPackageName() + "_preferences", Context.MODE_PRIVATE);
+        String status = preferences.getString(KEY_RUNTIME_STATUS,
+                "Aguardando o Gboard montar o teclado. Abra um campo de texto e volte aqui.");
+        runtimeStatusPreference.setSummary(status);
     }
 
     private void addRow(PreferenceCategory category, String key, String title,
@@ -108,6 +130,7 @@ public final class QwertzSettingsActivity extends PreferenceActivity {
                 .putString(KEY_TOP, top)
                 .putString(KEY_MIDDLE, middle)
                 .putString(KEY_BOTTOM, bottom)
+                .putString(KEY_RUNTIME_STATUS, "Configuração salva. Aguardando o Gboard montar o teclado.")
                 .commit();
         if (!saved) {
             Toast.makeText(this, "Não foi possível salvar o layout.", Toast.LENGTH_LONG).show();
