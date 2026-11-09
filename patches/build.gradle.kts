@@ -2,8 +2,8 @@ group = "app.gboard.colemak"
 
 patches {
     about {
-        name = "Gboard QWERTZ: custom layout"
-        description = "Adds three Morphe options to customize the QWERTZ letter rows: 10 keys on the top row, 9 on the middle row and 7 on the bottom row. All 26 letters must be used exactly once."
+        name = "Gboard QWERTZ: native custom layout"
+        description = "Adds a native settings category inside Gboard to customize the 10/9/7 QWERTZ letter rows."
         source = "https://github.com/k00byme/gboard-colemak-patch."
         author = "k00byme"
         contact = "https://github.com/k00byme"
