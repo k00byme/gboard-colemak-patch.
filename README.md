@@ -1,4 +1,4 @@
-# Gboard Colemak: remover `; ` e preencher a fileira
+# Gboard Colemak: remover `;` e preencher a fileira
 
 Patch Morphe para o Gboard **18.5.4.993608717-release-arm64-v8a**.
 
