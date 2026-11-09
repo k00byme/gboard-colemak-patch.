@@ -18,7 +18,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Restore native QWERTZ source files
-        run: unzip -o native-qwertz-source.zip -d .
+        run: |
+          unzip -o native-qwertz-source.zip -d .
+          cp native/QwertzSettingsActivity.java patches/src/main/native/qwertz/QwertzSettingsActivity.java
 
       - name: Fix Dexlib opcode comparison for Gboard 18.5.4
         shell: bash
@@ -114,12 +116,13 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_ACTOR: ${{ github.actor }}
 
-      - name: Upload compiled patch and source archive
+      - name: Upload compiled patch and source
         uses: actions/upload-artifact@v4
         with:
           name: gboard-qwertz-native-settings
           path: |
             patches/build/libs/*.mpp
+            native/QwertzSettingsActivity.java
             native-qwertz-source.zip
           if-no-files-found: error
           retention-days: 14
