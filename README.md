@@ -6,7 +6,7 @@ Patch Morphe para Gboard **18.5.4.993608717-release-arm64-v8a**.
 
 Depois de aplicar o patch, abra **Configurações do Gboard**. Uma categoria **Teclado personalizado** aparecerá com a entrada **Personalizar QWERTZ**.
 
-Nessa tela, edite as três fileiras:
+Edite as três fileiras:
 
 | Fileira | Letras | Padrão |
 |---|---:|---|
@@ -14,7 +14,7 @@ Nessa tela, edite as três fileiras:
 | Do meio | 9 | `asdfghjkl` |
 | Inferior | 7 | `yxcvbnm` |
 
-As três sequências juntas precisam conter cada letra de `a` a `z` exatamente uma vez. Salve as alterações e feche/reabra o teclado para reconstruir o mapeamento. A configuração fica salva nas preferências do Gboard.
+As três sequências juntas precisam conter cada letra de `a` a `z` exatamente uma vez. Depois de editar as três fileiras, toque em **Aplicar e reiniciar Gboard**. O botão grava as três sequências e reinicia o processo do Gboard, para que o mapeamento em cache seja reconstruído com os novos valores.
 
 ## Compatibilidade
 
