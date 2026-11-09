@@ -20,6 +20,21 @@ jobs:
       - name: Restore native QWERTZ source files
         run: unzip -o native-qwertz-source.zip -d .
 
+      - name: Fix Dexlib opcode comparison for Gboard 18.5.4
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("patches/src/main/kotlin/app/gboard/colemak/RemoveColemakSemicolonPatch.kt")
+          source = path.read_text()
+          old = 'instructions[it].opcode.name == "RETURN_OBJECT"'
+          new = 'instructions[it].opcode == com.android.tools.smali.dexlib2.Opcode.RETURN_OBJECT'
+          if old not in source:
+              raise SystemExit("Expected outdated RETURN_OBJECT comparison was not found")
+          path.write_text(source.replace(old, new))
+          PY
+
       - name: Set up Java 21
         uses: actions/setup-java@v4
         with:
