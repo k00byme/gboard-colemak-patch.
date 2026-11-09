@@ -21,6 +21,7 @@ jobs:
         run: |
           unzip -o native-qwertz-source.zip -d .
           cp native/QwertzSettingsActivity.java patches/src/main/native/qwertz/QwertzSettingsActivity.java
+          cp native/QwertzLayoutRuntime.java patches/src/main/native/qwertz/QwertzLayoutRuntime.java
 
       - name: Fix Dexlib opcode comparison for Gboard 18.5.4
         shell: bash
@@ -66,34 +67,6 @@ jobs:
           set -euo pipefail
           test -f "$ANDROID_HOME/platforms/android-35/android.jar"
           test -x "$ANDROID_HOME/build-tools/35.0.0/d8"
-          python3 - <<'PY'
-          from pathlib import Path
-          path = Path("patches/src/main/native/qwertz/QwertzSettingsActivity.java")
-          source = path.read_text()
-          start = source.find("        preference.setOnPreferenceChangeListener(")
-          if start >= 0:
-              end_marker = "        });"
-              end = source.find(end_marker, start)
-              if end < 0:
-                  raise SystemExit("Could not find the end of the preference listener")
-              end += len(end_marker)
-              replacement = """        preference.setOnPreferenceChangeListener(new Preference.OnPreferenceChangeListener() {
-                      @Override
-                      public boolean onPreferenceChange(Preference item, Object newValue) {
-                          String value = String.valueOf(newValue).toLowerCase(Locale.ROOT);
-                          if (!isValidRow(value, expectedLength)) {
-                              Toast.makeText(QwertzSettingsActivity.this,
-                                      "Digite " + expectedLength + " letras diferentes, sem espaços.",
-                                      Toast.LENGTH_LONG).show();
-                              return false;
-                          }
-                          return true;
-                      }
-                  });"""
-              path.write_text(source[:start] + replacement + source[end:])
-          elif "new Preference.OnPreferenceChangeListener()" not in source:
-              raise SystemExit("Could not safely locate the preference listener")
-          PY
           mkdir -p build/qwertz/classes build/qwertz/dex patches/src/main/resources/extensions
           javac -encoding UTF-8 -source 8 -target 8 \
             -bootclasspath "$ANDROID_HOME/platforms/android-35/android.jar" \
@@ -123,6 +96,6 @@ jobs:
           path: |
             patches/build/libs/*.mpp
             native/QwertzSettingsActivity.java
-            native-qwertz-source.zip
+            native/QwertzLayoutRuntime.java
           if-no-files-found: error
           retention-days: 14
