@@ -6,7 +6,6 @@ import app.morphe.patcher.patch.document
 import app.morphe.patcher.patch.resourcePatch
 import org.w3c.dom.Document
 import org.w3c.dom.Element
-import org.w3c.dom.Node
 
 private val gboardCompatibility = Compatibility(
     name = "Gboard",
