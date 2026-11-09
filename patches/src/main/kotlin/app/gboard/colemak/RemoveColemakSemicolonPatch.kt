@@ -34,6 +34,12 @@ private const val ORIGINAL_TOP_ROW_LAYOUT = "@0x7f0e02c8"
 private const val COLEMAK_TOP_ROW_LAYOUT = "@0x7f0e0019"
 private const val EXPANDED_KEY_WEIGHT = "0x42de38e4" // 111.1111f
 
+private fun Element.refEquals(attribute: String, expected: String): Boolean {
+    fun normalize(value: String): String =
+        value.trim().removePrefix("@").removePrefix("0x").lowercase()
+    return normalize(getAttribute(attribute)) == normalize(expected)
+}
+
 private fun Element.children(): List<Element> {
     val result = mutableListOf<Element>()
     for (i in 0 until childNodes.length) {
@@ -73,7 +79,7 @@ val removeSemicolonFromColemakPatch = resourcePatch(
         document("res/q1a.xml").use { colemakGroup ->
             val merges = colemakGroup.documentElement.descendantsAndSelf().filter {
                 it.tagName == "merge" &&
-                    it.getAttribute("def") == ORIGINAL_COLEMAK_FRAMEWORK
+                    it.refEquals("def", ORIGINAL_COLEMAK_FRAMEWORK)
             }
             check(merges.size == 1) {
                 "Expected one Colemak framework merge in res/q1a.xml; found ${merges.size}."
@@ -90,7 +96,7 @@ val removeSemicolonFromColemakPatch = resourcePatch(
                 val root = customFramework.replaceRootFrom(stockFramework)
                 val matches = root.descendantsAndSelf().filter {
                     it.tagName == "include" &&
-                        it.getAttribute("href") == ORIGINAL_COLEMAK_ROOT
+                        it.refEquals("href", ORIGINAL_COLEMAK_ROOT)
                 }
                 check(matches.size == 1) {
                     "Expected one phone root include in the Colemak framework; found ${matches.size}."
@@ -107,7 +113,7 @@ val removeSemicolonFromColemakPatch = resourcePatch(
 
                 val softkeys = root.descendantsAndSelf().filter {
                     it.tagName == "softkeys" &&
-                        it.getAttribute("href") == ORIGINAL_COLEMAK_SOFTKEYS
+                        it.refEquals("href", ORIGINAL_COLEMAK_SOFTKEYS)
                 }
                 check(softkeys.size == 1) {
                     "Expected one Colemak softkey reference; found ${softkeys.size}."
@@ -116,7 +122,7 @@ val removeSemicolonFromColemakPatch = resourcePatch(
 
                 val mappings = root.descendantsAndSelf().filter {
                     it.tagName == "include" &&
-                        it.getAttribute("href") == ORIGINAL_COLEMAK_MAPPINGS
+                        it.refEquals("href", ORIGINAL_COLEMAK_MAPPINGS)
                 }
                 check(mappings.size == 1) {
                     "Expected one Colemak mapping reference; found ${mappings.size}."
@@ -125,8 +131,8 @@ val removeSemicolonFromColemakPatch = resourcePatch(
 
                 val portraitViews = root.descendantsAndSelf().filter {
                     it.tagName == "view" &&
-                        (it.getAttribute("layout") == ORIGINAL_PORTRAIT_LAYOUT ||
-                            it.getAttribute("layout") == COLEMAK_PORTRAIT_LAYOUT)
+                        (it.refEquals("layout", ORIGINAL_PORTRAIT_LAYOUT) ||
+                            it.refEquals("layout", COLEMAK_PORTRAIT_LAYOUT))
                 }
                 check(portraitViews.size == 1) {
                     "Expected one normal portrait view in the Colemak root; found ${portraitViews.size}."
@@ -142,7 +148,7 @@ val removeSemicolonFromColemakPatch = resourcePatch(
                 val root = customSoftkeys.replaceRootFrom(stockSoftkeys)
                 val matches = root.descendantsAndSelf().filter {
                     it.tagName == "softkey" &&
-                        it.getAttribute("id") == COLEMAK_SEMICOLON_KEY &&
+                        it.refEquals("id", COLEMAK_SEMICOLON_KEY) &&
                         it.getAttribute("press_data") == ";"
                 }
                 check(matches.size == 1) {
@@ -159,9 +165,9 @@ val removeSemicolonFromColemakPatch = resourcePatch(
                 val root = customMappings.replaceRootFrom(stockMappings)
                 val matches = root.descendantsAndSelf().filter {
                     it.tagName == "mapping" &&
-                        it.getAttribute("view_id") == COLEMAK_LAST_VIEW &&
-                        (it.getAttribute("key_id") == COLEMAK_SEMICOLON_KEY ||
-                            it.getAttribute("key_id") == COLEMAK_SHIFT_SEMICOLON_KEY)
+                        it.refEquals("view_id", COLEMAK_LAST_VIEW) &&
+                        (it.refEquals("key_id", COLEMAK_SEMICOLON_KEY) ||
+                            it.refEquals("key_id", COLEMAK_SHIFT_SEMICOLON_KEY))
                 }
                 check(matches.map { it.getAttribute("key_id") }.toSet() ==
                     setOf(COLEMAK_SEMICOLON_KEY, COLEMAK_SHIFT_SEMICOLON_KEY)
@@ -186,8 +192,8 @@ val removeSemicolonFromColemakPatch = resourcePatch(
                     "Expected the two row includes in res/kyi.xml; found ${rowIncludes.size}."
                 }
                 check(
-                    rowIncludes.first().getAttribute("layout") == ORIGINAL_TOP_ROW_LAYOUT ||
-                        rowIncludes.first().getAttribute("layout") == COLEMAK_TOP_ROW_LAYOUT
+                    rowIncludes.first().refEquals("layout", ORIGINAL_TOP_ROW_LAYOUT) ||
+                        rowIncludes.first().refEquals("layout", COLEMAK_TOP_ROW_LAYOUT)
                 ) {
                     "The first row include in res/kyi.xml was not the expected top-row layout."
                 }
@@ -205,7 +211,7 @@ val removeSemicolonFromColemakPatch = resourcePatch(
                 } ?: error("Could not find the top key row in res/dg2.xml.")
 
                 val semicolonViews = topRow.children().filter {
-                    it.getAttribute("id") == COLEMAK_LAST_VIEW
+                    it.refEquals("id", COLEMAK_LAST_VIEW)
                 }
                 check(semicolonViews.size == 1) {
                     "Expected one Colemak semicolon view in the top row; found ${semicolonViews.size}."
