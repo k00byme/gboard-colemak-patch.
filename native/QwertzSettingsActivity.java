@@ -27,7 +27,7 @@ public final class QwertzSettingsActivity extends PreferenceActivity {
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
-        setTitle("Personalizar QWERTZ");
+        setTitle("Personalizar layout");
 
         getPreferenceManager().setSharedPreferencesName(
                 getPackageName() + "_preferences");

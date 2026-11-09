@@ -56,7 +56,7 @@ private fun installSettingsActivity(manifestDocument: Document) {
 
     activity.setAndroidAttribute("name", SETTINGS_ACTIVITY)
     activity.setAndroidAttribute("exported", "false")
-    activity.setAndroidAttribute("label", "Personalizar QWERTZ")
+    activity.setAndroidAttribute("label", "Personalizar layout")
 }
 
 private fun installSettingsEntry(settingsDocument: Document) {
@@ -91,7 +91,7 @@ private fun installSettingsEntry(settingsDocument: Document) {
 }
 
 private val qwertzSettingsResourcePatch = resourcePatch(
-    description = "Adds a native QWERTZ editor entry to both Gboard settings screens.",
+    description = "Adds a native editor entry for Latin alphabetic layouts to both Gboard settings screens.",
 ) {
     compatibleWith(gboardCompatibility)
 
@@ -176,7 +176,7 @@ private fun loadExtensionDex(
 }
 
 private val qwertzNativeRuntimeBytecodePatch = bytecodePatch(
-    description = "Adds the native QWERTZ settings activity and applies saved rows to QWERTZ mappings.",
+    description = "Adds the native layout settings activity and applies saved rows to matching Latin alphabetic mappings.",
 ) {
     compatibleWith(gboardCompatibility)
 
@@ -209,8 +209,8 @@ private val qwertzNativeRuntimeBytecodePatch = bytecodePatch(
 /** Public Morphe patch. Its editable settings live inside Gboard, not in Morphe options. */
 @Suppress("unused")
 val customizeQwertzLayoutPatch = resourcePatch(
-    name = "QWERTZ: native customizable layout",
-    description = "Adds a QWERTZ category inside Gboard settings with editable top, middle and bottom letter rows.",
+    name = "All layouts: native customizable layout",
+    description = "Adds a Gboard settings editor that applies saved letter rows to all matching Latin alphabetic layouts.",
     default = true,
 ) {
     compatibleWith(gboardCompatibility)

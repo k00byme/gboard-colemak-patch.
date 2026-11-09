@@ -10,6 +10,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.Locale;
 import java.util.Map;
 
@@ -88,8 +89,8 @@ public final class QwertzLayoutRuntime {
                     if (structure.length() < 1800) {
                         structure.append(describeSparseArray(field.getName(), mappings));
                     }
-                    if (remapIfStock(mappings, LOWERCASE_KEY_IDS, rows) ||
-                            remapIfStock(mappings, UPPERCASE_KEY_IDS, rows)) {
+                    if (remapAlphabeticLayout(mappings, LOWERCASE_KEY_IDS, rows) ||
+                            remapAlphabeticLayout(mappings, UPPERCASE_KEY_IDS, rows)) {
                         changedGroups++;
                     }
                 }
@@ -98,7 +99,7 @@ public final class QwertzLayoutRuntime {
 
             String status;
             if (changedGroups > 0) {
-                status = "APLICADO: " + changedGroups + " grupo(s) de teclas; " +
+                status = "APLICADO: " + changedGroups + " grupo(s) de teclas alfabéticas; " +
                         "sequências " + rows[0] + " / " + rows[1] + " / " + rows[2];
             } else if (sparseArrays == 0) {
                 status = "NÃO APLICADO: nenhum SparseArray encontrado no KeyMappingDef (" +
@@ -143,9 +144,21 @@ public final class QwertzLayoutRuntime {
         return count;
     }
 
-    private static boolean remapIfStock(SparseArray<?> mappings, int[] keyIds, String[] rows)
+    /**
+     * Remaps every Latin alphabetic mapping with the complete 26-key letter set.
+     * It deliberately does not check whether the original layout was QWERTZ:
+     * QWERTY, AZERTY and other matching Latin layouts are targets too.
+     */
+    private static boolean remapAlphabeticLayout(SparseArray<?> mappings, int[] keyIds, String[] rows)
             throws Exception {
         if (mappings.size() < VIEW_IDS.length) return false;
+
+        int presentViewSlots = 0;
+        for (int viewId : VIEW_IDS) {
+            if (mappings.get(viewId) != null) presentViewSlots++;
+        }
+        // Only touch a full alphabetic keyboard, never a symbol or number panel.
+        if (presentViewSlots != VIEW_IDS.length) return false;
 
         Map<Integer, Object> definitionsById = new HashMap<>();
         for (int i = 0; i < mappings.size(); i++) {
@@ -153,12 +166,10 @@ public final class QwertzLayoutRuntime {
             int keyId = resolveSoftKeyId(mappingEntry);
             if (keyId != 0) definitionsById.put(keyId, mappingEntry);
         }
-        if (definitionsById.isEmpty()) return false;
 
-        // Refuse to touch non-QWERTZ layouts or an unexpected mapping structure.
-        for (int i = 0; i < VIEW_IDS.length; i++) {
-            Object current = mappings.get(VIEW_IDS[i]);
-            if (current == null || resolveSoftKeyId(current) != keyIds[i]) return false;
+        // Require all 26 letter definitions, independent of their current order.
+        for (int keyId : keyIds) {
+            if (!definitionsById.containsKey(keyId)) return false;
         }
 
         String allLetters = rows[0] + rows[1] + rows[2];
@@ -181,52 +192,58 @@ public final class QwertzLayoutRuntime {
                 keyIds[DEFAULT_LAYOUT.indexOf(rows[1].charAt(4))]);
         Object splitBottom = definitionsById.get(
                 keyIds[DEFAULT_LAYOUT.indexOf(rows[2].charAt(3))]);
-        if (splitMiddle != null) writable.put(SPLIT_MIDDLE_VIEW_ID, splitMiddle);
-        if (splitBottom != null) writable.put(SPLIT_BOTTOM_VIEW_ID, splitBottom);
+        if (splitMiddle != null && mappings.get(SPLIT_MIDDLE_VIEW_ID) != null) {
+            writable.put(SPLIT_MIDDLE_VIEW_ID, splitMiddle);
+        }
+        if (splitBottom != null && mappings.get(SPLIT_BOTTOM_VIEW_ID) != null) {
+            writable.put(SPLIT_BOTTOM_VIEW_ID, splitBottom);
+        }
         return true;
     }
 
     /**
-     * Find a known Gboard SoftKeyDef resource ID by inspecting a small wrapper graph.
-     * Gboard stores SoftKeyDef objects inside obfuscated mapping wrappers; relying on
-     * one guessed wrapper field name made the old runtime silently skip the remap.
-     */
-    /**
-     * Gboard 18.5.4 stores each SoftKeyDef inside two obfuscated wrappers:
-     * qbo -> qbp -> SoftKeyDef. The resource ID is SoftKeyDef.f; the wrapper
-     * reference is field a. Do not recursively scan arbitrary fields here:
-     * other integers in the wrapper graph are not key resource IDs.
+     * Find a known letter SoftKeyDef resource ID anywhere in the wrapper graph.
+     * Gboard's internal wrapper names are obfuscated and can change between builds,
+     * so this walks non-platform object fields instead of assuming qbo -> qbp -> SoftKeyDef.
      */
     private static int resolveSoftKeyId(Object mappingEntry) {
-        Object current = mappingEntry;
-        for (int depth = 0; depth < 3 && current != null; depth++) {
-            Class<?> currentClass = current.getClass();
-            try {
-                Field id = currentClass.getDeclaredField("f");
-                if (id.getType() == Integer.TYPE) {
-                    id.setAccessible(true);
-                    int candidate = id.getInt(current);
-                    if (isKnownSoftKeyId(candidate)) return candidate;
-                }
-            } catch (NoSuchFieldException ignored) {
-                // This wrapper does not carry the key ID; follow its nested object.
-            } catch (Throwable ignored) {
-                // Continue only through the known wrapper link below.
-            }
+        return resolveSoftKeyId(mappingEntry, 0, new IdentityHashMap<Object, Boolean>());
+    }
 
-            try {
-                Field wrapped = currentClass.getDeclaredField("a");
-                wrapped.setAccessible(true);
-                Object next = wrapped.get(current);
-                if (next == current) return 0;
-                current = next;
-            } catch (NoSuchFieldException missingWrapper) {
-                return 0;
-            } catch (Throwable inaccessibleWrapper) {
-                Log.w(TAG, "Cannot read Gboard mapping wrapper " +
-                        currentClass.getName() + ".a", inaccessibleWrapper);
-                return 0;
+    private static int resolveSoftKeyId(
+            Object current, int depth, IdentityHashMap<Object, Boolean> visited) {
+        if (current == null || depth > 5 || visited.size() >= 128 ||
+                visited.put(current, Boolean.TRUE) != null) return 0;
+
+        Class<?> type = current.getClass();
+        while (type != null && type != Object.class) {
+            for (Field field : type.getDeclaredFields()) {
+                if (Modifier.isStatic(field.getModifiers()) || field.isSynthetic()) continue;
+                Class<?> fieldType = field.getType();
+                if (fieldType.isPrimitive() && fieldType != Integer.TYPE) continue;
+                if (fieldType.isArray()) continue;
+                try {
+                    field.setAccessible(true);
+                    Object value = field.get(current);
+                    if (fieldType == Integer.TYPE || fieldType == Integer.class) {
+                        if (value instanceof Integer && isKnownSoftKeyId(((Integer) value).intValue())) {
+                            return ((Integer) value).intValue();
+                        }
+                    } else if (value != null) {
+                        String nestedClass = value.getClass().getName();
+                        if (!nestedClass.startsWith("java.") &&
+                                !nestedClass.startsWith("javax.") &&
+                                !nestedClass.startsWith("android.") &&
+                                !nestedClass.startsWith("androidx.")) {
+                            int nested = resolveSoftKeyId(value, depth + 1, visited);
+                            if (nested != 0) return nested;
+                        }
+                    }
+                } catch (Throwable ignored) {
+                    // Hidden or inaccessible fields are skipped.
+                }
             }
+            type = type.getSuperclass();
         }
         return 0;
     }

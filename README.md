@@ -1,10 +1,10 @@
-# Gboard QWERTZ: layout personalizável nas configurações do teclado
+# Gboard: layout alfabético personalizável em todos os layouts latinos
 
 Patch Morphe para Gboard **18.5.4.993608717-release-arm64-v8a**.
 
 ## Onde configurar
 
-Depois de aplicar o patch, abra **Configurações do Gboard**. Uma categoria **Teclado personalizado** aparecerá com a entrada **Personalizar QWERTZ**.
+Depois de aplicar o patch, abra **Configurações do Gboard**. Uma categoria **Teclado personalizado** aparecerá com a entrada **Personalizar layout**.
 
 Edite as três fileiras:
 
@@ -26,7 +26,7 @@ A tela do editor mostra **Diagnóstico do layout**. Abra um campo de texto para 
 - Versão: `18.5.4.993608717-release-arm64-v8a`
 - Arquitetura: `arm64-v8a`
 
-O patch reconhece e modifica apenas o mapeamento QWERTZ original. Outros layouts, como QWERTY, não devem ser alterados.
+O patch tenta modificar qualquer mapeamento alfabético latino que contenha as 26 teclas e os mesmos IDs de posição do Gboard. Ele não exige mais que o layout original seja QWERTZ. Layouts não latinos e painéis de símbolos/números ficam fora do escopo.
 
 ## Compilação
 
