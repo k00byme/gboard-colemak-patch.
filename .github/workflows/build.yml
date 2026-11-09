@@ -43,9 +43,12 @@ jobs:
 
       - name: Compile the native Gboard settings extension to DEX
         shell: bash
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
         run: |
           set -euo pipefail
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          test -f "$ANDROID_HOME/platforms/android-35/android.jar"
+          test -x "$ANDROID_HOME/build-tools/35.0.0/d8"
           mkdir -p build/qwertz/classes build/qwertz/dex patches/src/main/resources/extensions
           javac -encoding UTF-8 -source 8 -target 8 \
             -bootclasspath "$ANDROID_HOME/platforms/android-35/android.jar" \
