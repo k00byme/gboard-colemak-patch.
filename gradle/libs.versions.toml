@@ -1,6 +1,5 @@
 [versions]
 morphe-patcher = "2.3.0"
-# Required by the Morphe Gradle plugin version catalog.
 smali = "4220ae75f7"
 gson = "2.15.0"
 

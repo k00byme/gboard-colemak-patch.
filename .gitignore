@@ -1,0 +1,8 @@
+.gradle/
+**/build/
+.idea/
+.vscode/
+*.apk
+*.class
+*.mpp
+local.properties

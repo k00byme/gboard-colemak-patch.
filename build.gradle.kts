@@ -1,1 +1,1 @@
-// Root build configuration. The Morphe Gradle plugin configures the patches module.
+// A configuração do plugin Morphe é declarada em settings.gradle.kts.

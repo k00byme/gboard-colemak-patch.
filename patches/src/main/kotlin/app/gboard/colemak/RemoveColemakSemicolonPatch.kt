@@ -22,7 +22,7 @@ private const val COLEMAK_LAST_VIEW = "@0x7f0b0045"
 private const val ORIGINAL_COLEMAK_FRAMEWORK = "@0x7f17073d"
 private const val CUSTOM_COLEMAK_FRAMEWORK = "@0x7f170000"
 private const val ORIGINAL_COLEMAK_ROOT = "@0x7f17073e"
-private const val CUSTOM_COLEMAK_ROOT = "@0x7f170001"
+private const val CUSTOM_COLEMAK_ROOT = "@0x7f170eee"
 private const val ORIGINAL_COLEMAK_SOFTKEYS = "@0x7f170f92"
 private const val CUSTOM_COLEMAK_SOFTKEYS = "@0x7f170003"
 private const val ORIGINAL_COLEMAK_MAPPINGS = "@0x7f170aa9"
@@ -100,7 +100,7 @@ val removeSemicolonFromColemakPatch = resourcePatch(
         // Clone the Colemak phone root and point it to private copies of its
         // key data, mapping data, and portrait layout.
         document("res/rpH.xml").use { stockRoot ->
-            document("res/Ktm.xml").use { customRoot ->
+            document("res/aj_.xml").use { customRoot ->
                 val root = customRoot.replaceRootFrom(stockRoot)
 
                 val softkeys = root.descendantsAndSelf().filter {

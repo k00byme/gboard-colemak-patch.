@@ -1,22 +1,26 @@
-# Gboard Colemak row-fill patch
+# Gboard Colemak: remover `; ` e preencher a fileira
 
-Morphe patch for Gboard 18.5.4.993608717-release-arm64-v8a.
+Patch Morphe para o Gboard **18.5.4.993608717-release-arm64-v8a**.
 
-## What it changes
+## Resultado
 
-- Removes the semicolon key from the Colemak main keyboard.
-- Removes the now-unused semicolon/shifted-colon view mapping.
-- Replaces Colemak's portrait keyboard body with a private copy of the stock layout.
-- Removes the semicolon's physical slot from the Colemak top row and increases the nine remaining letter-key weights evenly, so they fill the same total row width.
-- Leaves QWERTY and other layouts at their original widths.
-- Does not edit the `?123` symbols resources; semicolon remains available there.
+- Mantém a ordem Colemak da fileira superior: **Q W F P G J L U Y**.
+- Remove o ponto e vírgula (`;`) da fileira principal.
+- Redistribui a largura que era ocupada pela tecla removida igualmente entre as nove letras, preenchendo a fileira sem deixar um espaço vazio.
+- Mantém o espaçador central original entre os grupos de teclas.
+- Preserva as outras fileiras do Colemak e os demais layouts.
+- Não altera os recursos da tela de símbolos (`?123`), então o ponto e vírgula continua disponível nela.
 
-The patch uses existing, otherwise unreferenced layout resource IDs as private copies, avoiding changes to the shared QWERTY layout resources.
+O patch cria cópias privadas dos recursos usados pelo Colemak. Assim, não precisa alterar os recursos compartilhados com QWERTY ou outros layouts. O recurso de restrições do aplicativo no manifesto também permanece intacto.
 
-## Build
+## Compatibilidade
 
-Every push to `main` runs the GitHub Actions workflow. The resulting `.mpp` is uploaded as an Actions artifact named `gboard-colemak-patch`. A manual run is also available under Actions.
+- Pacote: `com.google.android.inputmethod.latin`
+- Versão: `18.5.4.993608717-release-arm64-v8a`
+- Arquitetura do APK enviado: `arm64-v8a`
 
-## Compatibility
+O patch verifica os elementos XML esperados e interrompe a aplicação caso a estrutura do Gboard seja diferente.
 
-Only Gboard `18.5.4.993608717-release-arm64-v8a` is targeted. The patch checks the expected XML entries and refuses to continue if the resource structure differs.
+## Compilação
+
+Cada push para `main` inicia o GitHub Actions. O arquivo `.mpp` compilado é publicado como artefato chamado **gboard-colemak-patch**, disponível na execução do workflow por 14 dias. Também é possível iniciar uma compilação manual na aba **Actions**.

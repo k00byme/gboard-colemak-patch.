@@ -1,9 +1,8 @@
-name: Build Morphe patch
+name: Build Gboard Colemak patch
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -12,10 +11,10 @@ permissions:
 
 jobs:
   build:
-    name: Compile .mpp
+    name: Compile Morphe patch
     runs-on: ubuntu-latest
     steps:
-      - name: Check out source
+      - name: Check out repository
         uses: actions/checkout@v4
 
       - name: Set up Java 21
@@ -24,18 +23,18 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: Set up Gradle
+      - name: Set up Gradle 9.8.2
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "9.8.2"
 
-      - name: Build Morphe patch
+      - name: Compile .mpp
         run: gradle :patches:buildAndroid --no-daemon
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_ACTOR: ${{ github.actor }}
 
-      - name: Upload .mpp artifact
+      - name: Upload compiled patch
         uses: actions/upload-artifact@v4
         with:
           name: gboard-colemak-patch
