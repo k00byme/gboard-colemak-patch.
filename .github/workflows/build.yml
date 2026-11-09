@@ -1,0 +1,44 @@
+name: Build Morphe patch
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  build:
+    name: Compile .mpp
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.8.2"
+
+      - name: Build Morphe patch
+        run: gradle :patches:buildAndroid --no-daemon
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: ${{ github.actor }}
+
+      - name: Upload .mpp artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gboard-colemak-patch
+          path: patches/build/libs/*.mpp
+          if-no-files-found: error
+          retention-days: 14
