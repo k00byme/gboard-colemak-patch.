@@ -63,10 +63,12 @@ val removeSemicolonFromColemakPatch = resourcePatch(
                     key.getAttribute("press_data") == ";"
                 ) matches += key
             }
-            check(matches.size == 1) {
-                "Expected exactly one Colemak semicolon softkey in res/PWn.xml; found ${matches.size}."
+            check(matches.size <= 1) {
+                "Expected at most one Colemak semicolon softkey in res/PWn.xml; found ${matches.size}."
             }
-            matches.single().parentNode.removeChild(matches.single())
+            // A previous semicolon-only patch may already have removed this entry.
+            // In that case, continue with the row geometry update.
+            matches.singleOrNull()?.let { it.parentNode.removeChild(it) }
         }
 
         // Remove normal and shifted mappings for the now-absent semicolon key.
@@ -84,11 +86,8 @@ val removeSemicolonFromColemakPatch = resourcePatch(
                         (keyId == COLEMAK_SEMICOLON_KEY || keyId == COLEMAK_SHIFT_SEMICOLON_KEY)
                     ) matches += mapping
                 }
-                check(matches.map { it.getAttribute("key_id") }.toSet() ==
-                    setOf(COLEMAK_SEMICOLON_KEY, COLEMAK_SHIFT_SEMICOLON_KEY)
-                ) {
-                    "Expected Colemak semicolon and shifted-colon mappings in $path."
-                }
+                // These mappings may already be absent when upgrading from the
+                // earlier semicolon-removal patch. Remove whichever remain.
                 matches.forEach { it.parentNode.removeChild(it) }
             }
         }
@@ -145,10 +144,13 @@ val removeSemicolonFromColemakPatch = resourcePatch(
             val matches = mutableListOf<Element>()
             for (i in 0 until views.length) {
                 val view = views.item(i) as? Element ?: continue
-                if (view.getAttribute("layout") == ORIGINAL_PORTRAIT_LAYOUT) matches += view
+                val layout = view.getAttribute("layout")
+                if (layout == ORIGINAL_PORTRAIT_LAYOUT || layout == COLEMAK_PORTRAIT_LAYOUT) {
+                    matches += view
+                }
             }
             check(matches.size == 1) {
-                "Expected exactly one normal portrait keyboard view in res/rpH.xml; found ${matches.size}."
+                "Expected exactly one normal or already-patched portrait keyboard view in res/rpH.xml; found ${matches.size}."
             }
             matches.single().setAttribute("layout", COLEMAK_PORTRAIT_LAYOUT)
         }
