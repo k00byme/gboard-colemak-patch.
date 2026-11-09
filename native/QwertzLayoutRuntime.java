@@ -10,7 +10,6 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.HashMap;
-import java.util.IdentityHashMap;
 import java.util.Locale;
 import java.util.Map;
 
@@ -192,111 +191,42 @@ public final class QwertzLayoutRuntime {
      * Gboard stores SoftKeyDef objects inside obfuscated mapping wrappers; relying on
      * one guessed wrapper field name made the old runtime silently skip the remap.
      */
+    /**
+     * Gboard 18.5.4 stores each SoftKeyDef inside two obfuscated wrappers:
+     * qbo -> qbp -> SoftKeyDef. The resource ID is SoftKeyDef.f; the wrapper
+     * reference is field a. Do not recursively scan arbitrary fields here:
+     * other integers in the wrapper graph are not key resource IDs.
+     */
     private static int resolveSoftKeyId(Object mappingEntry) {
-        return findKnownId(mappingEntry, 0, new IdentityHashMap<Object, Boolean>());
-    }
-
-    private static int findKnownId(Object value, int depth, IdentityHashMap<Object, Boolean> visited) {
-        if (value == null || depth > 9 || visited.containsKey(value)) return 0;
-        visited.put(value, Boolean.TRUE);
-
-        if (value instanceof Integer) {
-            int id = ((Integer) value).intValue();
-            return isKnownSoftKeyId(id) ? id : 0;
-        }
-
-        Class<?> valueType = value.getClass();
-        String className = valueType.getName();
-        if (className.equals("com.google.android.libraries.inputmethod.metadata.SoftKeyDef")) {
-            int direct = readSoftKeyIdField(value);
-            if (direct != 0) return direct;
-        }
-
-        if (value instanceof SparseArray) {
-            SparseArray<?> array = (SparseArray<?>) value;
-            for (int i = 0; i < array.size() && i < 64; i++) {
-                int found = findKnownId(array.valueAt(i), depth + 1, visited);
-                if (found != 0) return found;
-            }
-            return 0;
-        }
-
-        if (value instanceof Map) {
-            int scanned = 0;
-            for (Object nested : ((Map<?, ?>) value).values()) {
-                if (scanned++ >= 64) break;
-                int found = findKnownId(nested, depth + 1, visited);
-                if (found != 0) return found;
-            }
-            return 0;
-        }
-
-        if (value instanceof Iterable) {
-            int scanned = 0;
-            for (Object nested : (Iterable<?>) value) {
-                if (scanned++ >= 64) break;
-                int found = findKnownId(nested, depth + 1, visited);
-                if (found != 0) return found;
-            }
-            return 0;
-        }
-
-        if (valueType.isArray()) {
-            if (!valueType.getComponentType().isPrimitive()) {
-                Object[] values = (Object[]) value;
-                for (int i = 0; i < values.length && i < 64; i++) {
-                    int found = findKnownId(values[i], depth + 1, visited);
-                    if (found != 0) return found;
-                }
-            }
-            return 0;
-        }
-
-        if (value instanceof CharSequence || value instanceof Class ||
-                value instanceof ClassLoader || value instanceof Context) return 0;
-
-        Class<?> current = valueType;
-        while (current != null && current != Object.class) {
-            for (Field field : current.getDeclaredFields()) {
-                if (Modifier.isStatic(field.getModifiers()) || field.isSynthetic()) continue;
-                try {
-                    field.setAccessible(true);
-                    if (field.getType() == Integer.TYPE) {
-                        int id = field.getInt(value);
-                        if (isKnownSoftKeyId(id)) return id;
-                    } else if (field.getType() == Integer.class) {
-                        Object boxed = field.get(value);
-                        if (boxed instanceof Integer && isKnownSoftKeyId(((Integer) boxed).intValue())) {
-                            return ((Integer) boxed).intValue();
-                        }
-                    } else if (!field.getType().isPrimitive()) {
-                        Object nested = field.get(value);
-                        int found = findKnownId(nested, depth + 1, visited);
-                        if (found != 0) return found;
-                    }
-                } catch (Throwable ignored) {
-                    // Continue through other fields; some framework internals are hidden.
-                }
-            }
-            current = current.getSuperclass();
-        }
-        return 0;
-    }
-
-    private static int readSoftKeyIdField(Object value) {
-        Class<?> current = value.getClass();
-        while (current != null && current != Object.class) {
+        Object current = mappingEntry;
+        for (int depth = 0; depth < 3 && current != null; depth++) {
+            Class<?> currentClass = current.getClass();
             try {
-                Field keyId = current.getDeclaredField("f");
-                keyId.setAccessible(true);
-                if (keyId.getType() == Integer.TYPE) {
-                    int id = keyId.getInt(value);
-                    return isKnownSoftKeyId(id) ? id : 0;
+                Field id = currentClass.getDeclaredField("f");
+                if (id.getType() == Integer.TYPE) {
+                    id.setAccessible(true);
+                    int candidate = id.getInt(current);
+                    if (isKnownSoftKeyId(candidate)) return candidate;
                 }
+            } catch (NoSuchFieldException ignored) {
+                // This wrapper does not carry the key ID; follow its nested object.
             } catch (Throwable ignored) {
-                // Fall back to scanning the other integer fields below.
+                // Continue only through the known wrapper link below.
             }
-            current = current.getSuperclass();
+
+            try {
+                Field wrapped = currentClass.getDeclaredField("a");
+                wrapped.setAccessible(true);
+                Object next = wrapped.get(current);
+                if (next == current) return 0;
+                current = next;
+            } catch (NoSuchFieldException missingWrapper) {
+                return 0;
+            } catch (Throwable inaccessibleWrapper) {
+                Log.w(TAG, "Cannot read Gboard mapping wrapper " +
+                        currentClass.getName() + ".a", inaccessibleWrapper);
+                return 0;
+            }
         }
         return 0;
     }
