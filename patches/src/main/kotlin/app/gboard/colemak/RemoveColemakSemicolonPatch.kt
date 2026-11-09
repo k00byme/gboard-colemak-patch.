@@ -91,25 +91,29 @@ val customizeQwertzLayoutPatch = resourcePatch(
     compatibleWith(gboardCompatibility)
 
     val topRow by stringOption(
-        key = "Top row (10 letters)",
+        key = "Fileira superior (10 letras)",
         default = "qwertzuiop",
-        description = "Enter 10 different letters, for example qwfpgjluyx.",
+        description = "Digite 10 letras diferentes, sem espaços.",
     ) { value -> isValidRow(value, 10) }
 
     val middleRow by stringOption(
-        key = "Middle row (9 letters)",
+        key = "Fileira do meio (9 letras)",
         default = "asdfghjkl",
-        description = "Enter 9 different letters.",
+        description = "Digite 9 letras diferentes, sem espaços.",
     ) { value -> isValidRow(value, 9) }
 
     val bottomRow by stringOption(
-        key = "Bottom row (7 letters)",
+        key = "Fileira inferior (7 letras)",
         default = "yxcvbnm",
-        description = "Enter 7 different letters.",
+        description = "Digite 7 letras diferentes, sem espaços.",
     ) { value -> isValidRow(value, 7) }
 
     execute {
-        val rows = listOf(topRow.lowercase(), middleRow.lowercase(), bottomRow.lowercase())
+        val rows = listOf(
+            requireNotNull(topRow).lowercase(),
+            requireNotNull(middleRow).lowercase(),
+            requireNotNull(bottomRow).lowercase(),
+        )
         val allLetters = rows.joinToString("")
         check(allLetters.length == 26 && allLetters.toSet() == ('a'..'z').toSet()) {
             "The three rows must contain every letter from a to z exactly once."
