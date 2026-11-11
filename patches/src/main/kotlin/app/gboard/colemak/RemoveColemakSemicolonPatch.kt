@@ -56,7 +56,7 @@ private fun installSettingsActivity(manifestDocument: Document) {
 
     activity.setAndroidAttribute("name", SETTINGS_ACTIVITY)
     activity.setAndroidAttribute("exported", "false")
-    activity.setAndroidAttribute("label", "Personalizar layout")
+    activity.setAndroidAttribute("label", "Keyboard Studio")
 }
 
 private fun installSettingsEntry(settingsDocument: Document) {
@@ -68,13 +68,13 @@ private fun installSettingsEntry(settingsDocument: Document) {
     if (existing != null) return
 
     val category = settingsDocument.createElement("androidx.preference.PreferenceCategory")
-    category.setAndroidAttribute("title", "Teclado personalizado")
+    category.setAndroidAttribute("title", "Keyboard Studio")
 
     val entry = settingsDocument.createElement(SETTINGS_HEADER_TAG)
     entry.setAndroidAttribute("persistent", "false")
     entry.setAndroidAttribute("selectable", "true")
-    entry.setAndroidAttribute("title", "Personalizar QWERTZ")
-    entry.setAndroidAttribute("summary", "Altere a posição das letras nas três fileiras")
+    entry.setAndroidAttribute("title", "Keyboard Studio")
+    entry.setAndroidAttribute("summary", "Efeitos das teclas e organização do layout")
     entry.setAndroidAttribute("key", SETTINGS_ENTRY_KEY)
 
     val intent = settingsDocument.createElement("intent")
@@ -91,7 +91,7 @@ private fun installSettingsEntry(settingsDocument: Document) {
 }
 
 private val qwertzSettingsResourcePatch = resourcePatch(
-    description = "Adds a native editor entry for Latin alphabetic layouts to both Gboard settings screens.",
+    description = "Adds Keyboard Studio to Gboard settings for key effects and Latin layout editing.",
 ) {
     compatibleWith(gboardCompatibility)
 
@@ -176,7 +176,7 @@ private fun loadExtensionDex(
 }
 
 private val qwertzNativeRuntimeBytecodePatch = bytecodePatch(
-    description = "Adds the native layout settings activity and applies saved rows to matching Latin alphabetic mappings.",
+    description = "Adds Keyboard Studio runtime hooks for key effects and Latin layout remapping.",
 ) {
     compatibleWith(gboardCompatibility)
 
@@ -203,14 +203,31 @@ private val qwertzNativeRuntimeBytecodePatch = bytecodePatch(
             returnIndex,
             "invoke-static {v$returnRegister}, Lapp/gboard/colemak/QwertzLayoutRuntime;->apply(Ljava/lang/Object;)V",
         )
+
+        // Hook Gboard's central keyboard touch dispatcher. The extension draws into
+        // SoftKeyboardView's overlay and does not consume MotionEvent or alter input.
+        val keyboardView = mutableClassDefBy(
+            "Lcom/google/android/libraries/inputmethod/widgets/SoftKeyboardView;"
+        )
+        val dispatchMethod = keyboardView.methods.singleOrNull {
+            it.name == "dispatchTouchEvent" &&
+                it.parameterTypes.size == 1 &&
+                it.parameterTypes.single().toString() == "Landroid/view/MotionEvent;" &&
+                it.returnType.toString() == "Z"
+        } ?: error("Could not find SoftKeyboardView.dispatchTouchEvent(MotionEvent): boolean")
+
+        dispatchMethod.addInstructions(
+            0,
+            "invoke-static {p0, p1}, Lapp/gboard/colemak/KeyboardEffectsHook;->onDispatchTouchEvent(Landroid/view/View;Landroid/view/MotionEvent;)V",
+        )
     }
 }
 
 /** Public Morphe patch. Its editable settings live inside Gboard, not in Morphe options. */
 @Suppress("unused")
 val customizeQwertzLayoutPatch = resourcePatch(
-    name = "All layouts: native customizable layout",
-    description = "Adds a Gboard settings editor that applies saved letter rows to all matching Latin alphabetic layouts.",
+    name = "Keyboard Studio: effects and custom layout",
+    description = "Adds touch effects and visual drag-and-drop rearrangement for matching Latin alphabetic layouts inside Gboard settings.",
     default = true,
 ) {
     compatibleWith(gboardCompatibility)
