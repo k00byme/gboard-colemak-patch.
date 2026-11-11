@@ -5,7 +5,9 @@ import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.preference.CheckBoxPreference;
 import android.preference.EditTextPreference;
+import android.preference.ListPreference;
 import android.preference.Preference;
 import android.preference.PreferenceActivity;
 import android.preference.PreferenceCategory;
@@ -21,50 +23,94 @@ public final class QwertzSettingsActivity extends PreferenceActivity {
     private static final String KEY_MIDDLE = "qwertz_middle_row";
     private static final String KEY_BOTTOM = "qwertz_bottom_row";
     private static final String KEY_RUNTIME_STATUS = "qwertz_runtime_status";
+    private static final String KEY_EFFECTS_ENABLED = "key_effects_enabled";
+    private static final String KEY_EFFECT_TYPE = "key_effect_type";
 
     private Preference runtimeStatusPreference;
 
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
-        setTitle("Personalizar layout");
+        setTitle("Keyboard Studio");
 
-        getPreferenceManager().setSharedPreferencesName(
-                getPackageName() + "_preferences");
+        getPreferenceManager().setSharedPreferencesName(getPackageName() + "_preferences");
         getPreferenceManager().setSharedPreferencesMode(Context.MODE_PRIVATE);
 
         PreferenceScreen screen = getPreferenceManager().createPreferenceScreen(this);
-        PreferenceCategory rows = new PreferenceCategory(this);
-        rows.setTitle("Ordem das letras");
-        screen.addPreference(rows);
 
-        addRow(rows, KEY_TOP, "Fileira superior", "10 letras, sem espaços", "qwertzuiop", 10);
-        addRow(rows, KEY_MIDDLE, "Fileira do meio", "9 letras, sem espaços", "asdfghjkl", 9);
-        addRow(rows, KEY_BOTTOM, "Fileira inferior", "7 letras, sem espaços", "yxcvbnm", 7);
+        PreferenceCategory effects = new PreferenceCategory(this);
+        effects.setTitle("Efeitos das teclas");
+        screen.addPreference(effects);
+
+        CheckBoxPreference effectsEnabled = new CheckBoxPreference(this);
+        effectsEnabled.setKey(KEY_EFFECTS_ENABLED);
+        effectsEnabled.setTitle("Ativar efeitos ao tocar");
+        effectsEnabled.setSummary("Mostra uma animação visual quando uma tecla é pressionada.");
+        effectsEnabled.setDefaultValue(Boolean.TRUE);
+        effectsEnabled.setPersistent(true);
+        effects.addPreference(effectsEnabled);
+
+        ListPreference effectType = new ListPreference(this);
+        effectType.setKey(KEY_EFFECT_TYPE);
+        effectType.setTitle("Tipo de efeito");
+        effectType.setDialogTitle("Escolher efeito");
+        effectType.setEntries(new CharSequence[] {
+                "Spark", "Blob", "Blob Spread", "Color Flash",
+                "Footprint", "Outline", "Bounce", "Ring Spread", "Firecracker"
+        });
+        effectType.setEntryValues(new CharSequence[] {
+                "spark", "blob", "blob_spread", "flash",
+                "footprint", "outline", "bounce", "ring", "firecracker"
+        });
+        effectType.setDefaultValue("spark");
+        effectType.setPersistent(true);
+        effectType.setSummary("Escolha a animação mostrada ao tocar nas teclas.");
+        effects.addPreference(effectType);
+
+        PreferenceCategory layout = new PreferenceCategory(this);
+        layout.setTitle("Organização das teclas");
+        screen.addPreference(layout);
+
+        Preference visualEditor = new Preference(this);
+        visualEditor.setTitle("Reorganizar visualmente");
+        visualEditor.setSummary("Segure e arraste as letras entre posições e fileiras.");
+        visualEditor.setPersistent(false);
+        visualEditor.setOnPreferenceClickListener(preference -> {
+            SharedPreferences prefs = getSharedPreferences(
+                    getPackageName() + "_preferences", Context.MODE_PRIVATE);
+            KeyRowEditorDialog.show(this, prefs, this::applyAndRestart);
+            return true;
+        });
+        layout.addPreference(visualEditor);
+
+        PreferenceCategory manual = new PreferenceCategory(this);
+        manual.setTitle("Editor manual das fileiras");
+        screen.addPreference(manual);
+
+        addRow(manual, KEY_TOP, "Fileira superior", "10 letras, sem espaços", "qwertzuiop", 10);
+        addRow(manual, KEY_MIDDLE, "Fileira do meio", "9 letras, sem espaços", "asdfghjkl", 9);
+        addRow(manual, KEY_BOTTOM, "Fileira inferior", "7 letras, sem espaços", "yxcvbnm", 7);
 
         Preference apply = new Preference(this);
         apply.setTitle("Aplicar e reiniciar Gboard");
         apply.setSummary("Salva as três fileiras e reinicia o Gboard para reconstruir o layout.");
         apply.setPersistent(false);
-        apply.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
-            @Override
-            public boolean onPreferenceClick(Preference preference) {
-                applyAndRestart();
-                return true;
-            }
+        apply.setOnPreferenceClickListener(preference -> {
+            applyAndRestart();
+            return true;
         });
-        rows.addPreference(apply);
+        manual.addPreference(apply);
 
         runtimeStatusPreference = new Preference(this);
         runtimeStatusPreference.setTitle("Diagnóstico do layout");
         runtimeStatusPreference.setSelectable(false);
-        rows.addPreference(runtimeStatusPreference);
+        manual.addPreference(runtimeStatusPreference);
 
         Preference rule = new Preference(this);
         rule.setTitle("Regra de validação");
-        rule.setSummary("Use todas as letras de a a z exatamente uma vez. Depois de editar as três fileiras, toque em Aplicar e reiniciar Gboard.");
+        rule.setSummary("Use todas as letras de a a z exatamente uma vez. Depois de editar, toque em Aplicar e reiniciar Gboard.");
         rule.setSelectable(false);
-        rows.addPreference(rule);
+        manual.addPreference(rule);
 
         setPreferenceScreen(screen);
     }
@@ -94,18 +140,15 @@ public final class QwertzSettingsActivity extends PreferenceActivity {
         preference.setDefaultValue(defaultValue);
         preference.setPersistent(true);
         preference.setSummary("Toque para editar a sequência de letras.");
-        preference.setOnPreferenceChangeListener(new Preference.OnPreferenceChangeListener() {
-            @Override
-            public boolean onPreferenceChange(Preference item, Object newValue) {
-                String value = String.valueOf(newValue).toLowerCase(Locale.ROOT);
-                if (!isValidRow(value, expectedLength)) {
-                    Toast.makeText(QwertzSettingsActivity.this,
-                            "Digite " + expectedLength + " letras diferentes, sem espaços.",
-                            Toast.LENGTH_LONG).show();
-                    return false;
-                }
-                return true;
+        preference.setOnPreferenceChangeListener((item, newValue) -> {
+            String value = String.valueOf(newValue).toLowerCase(Locale.ROOT);
+            if (!isValidRow(value, expectedLength)) {
+                Toast.makeText(QwertzSettingsActivity.this,
+                        "Digite " + expectedLength + " letras diferentes, sem espaços.",
+                        Toast.LENGTH_LONG).show();
+                return false;
             }
+            return true;
         });
         preference.getEditText().setInputType(
                 InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
@@ -130,7 +173,8 @@ public final class QwertzSettingsActivity extends PreferenceActivity {
                 .putString(KEY_TOP, top)
                 .putString(KEY_MIDDLE, middle)
                 .putString(KEY_BOTTOM, bottom)
-                .putString(KEY_RUNTIME_STATUS, "Configuração salva. Aguardando o Gboard montar o teclado.")
+                .putString(KEY_RUNTIME_STATUS,
+                        "Configuração salva. Aguardando o Gboard montar o teclado.")
                 .commit();
         if (!saved) {
             Toast.makeText(this, "Não foi possível salvar o layout.", Toast.LENGTH_LONG).show();
@@ -141,12 +185,9 @@ public final class QwertzSettingsActivity extends PreferenceActivity {
                 "Layout salvo. Reiniciando Gboard para aplicar as alterações.",
                 Toast.LENGTH_LONG).show();
 
-        new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                finish();
-                android.os.Process.killProcess(android.os.Process.myPid());
-            }
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            finish();
+            android.os.Process.killProcess(android.os.Process.myPid());
         }, 900);
     }
 
