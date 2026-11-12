@@ -94,15 +94,31 @@ data class EditableKeyboardLayout(
             if (index == source) row.copy(keys = row.keys.filterNot { it.id == keyId }) else row
         }.toMutableList()
 
-        val targetKeys = nextRows[target].keys.toMutableList()
+        val destination = nextRows.indexOfFirst { it.id == targetRowId }
+        check(destination >= 0) { "Destination row disappeared during move" }
+        val targetKeys = nextRows[destination].keys.toMutableList()
         require(targetIndex <= targetKeys.size) { "Target index is outside the destination row" }
         targetKeys.add(targetIndex, movedKey)
-        nextRows[target] = nextRows[target].copy(keys = targetKeys)
+        nextRows[destination] = nextRows[destination].copy(keys = targetKeys)
 
         // Empty rows are invalid; do not silently delete a user's row.
         require(nextRows.all { it.keys.isNotEmpty() }) {
             "Moving this key would leave an empty row"
         }
+        return copy(rows = nextRows)
+    }
+
+    fun addKey(rowId: String, index: Int, key: EditableKey): EditableKeyboardLayout {
+        require(rows.none { row -> row.keys.any { it.id == key.id } }) {
+            "Duplicate key id: ${key.id}"
+        }
+        val rowIndex = rows.indexOfFirst { it.id == rowId }
+        require(rowIndex >= 0) { "Unknown row id: $rowId" }
+        val nextKeys = rows[rowIndex].keys.toMutableList()
+        require(index in 0..nextKeys.size) { "Insertion index is outside the destination row" }
+        nextKeys.add(index, key)
+        val nextRows = rows.toMutableList()
+        nextRows[rowIndex] = nextRows[rowIndex].copy(keys = nextKeys)
         return copy(rows = nextRows)
     }
 
