@@ -1,0 +1,1 @@
+-keep class app.gboard.cafe.runtime.** { *; }
