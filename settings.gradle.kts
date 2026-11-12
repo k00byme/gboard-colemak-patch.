@@ -28,5 +28,4 @@ settings {
 }
 
 include(":patches")
-include(":patches:stub")
 include(":extensions:gboard-cafe")
