@@ -6,6 +6,7 @@ import android.graphics.Color;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
+import android.util.Log;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
@@ -47,22 +48,77 @@ public final class GboardCafeSettingsActivity extends Activity {
     private EditText color;
     private SeekBar duration;
     private TextView durationValue;
+    private String stage = "inicialização";
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         try {
+            stage = "abrindo armazenamento das configurações";
             prefs = getSharedPreferences(getPackageName() + "_preferences", MODE_PRIVATE);
+            stage = "montando a interface";
             buildScreen();
         } catch (Throwable error) {
+            Log.e("GboardCafe", "Falha durante " + stage, error);
+            showStartupError(error);
+        }
+    }
+
+
+    private void showStartupError(Throwable error) {
+        try {
+            android.widget.ScrollView scroll = new android.widget.ScrollView(this);
+            LinearLayout page = new LinearLayout(this);
+            page.setOrientation(LinearLayout.VERTICAL);
+            page.setPadding(dp(20), dp(24), dp(20), dp(24));
+            page.setBackgroundColor(Color.WHITE);
+
+            TextView title = new TextView(this);
+            title.setText("Gboard Cafe não conseguiu abrir as configurações.");
+            title.setTextColor(Color.BLACK);
+            title.setTextSize(19);
+            page.addView(title);
+
+            TextView explanation = new TextView(this);
+            explanation.setText("Falha em: " + stage + "\n\n"
+                    + error.getClass().getName() + "\n"
+                    + (error.getMessage() == null ? "(sem mensagem)" : error.getMessage()));
+            explanation.setTextColor(0xFFB00020);
+            explanation.setTextSize(14);
+            explanation.setTextIsSelectable(true);
+            explanation.setPadding(0, dp(16), 0, dp(16));
+            page.addView(explanation);
+
+            Button copy = button("Copiar diagnóstico");
+            copy.setOnClickListener(v -> {
+                try {
+                    android.content.ClipboardManager clipboard =
+                            (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                    String report = "Gboard Cafe\nEtapa: " + stage + "\n"
+                            + Log.getStackTraceString(error);
+                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Gboard Cafe", report));
+                    android.widget.Toast.makeText(this, "Diagnóstico copiado", android.widget.Toast.LENGTH_SHORT).show();
+                } catch (Throwable ignored) {}
+            });
+            page.addView(copy);
+
+            Button close = button("Fechar");
+            close.setOnClickListener(v -> finish());
+            page.addView(close);
+
+            scroll.addView(page);
+            setContentView(scroll);
+        } catch (Throwable fallbackError) {
             TextView fallback = new TextView(this);
-            fallback.setText("Gboard Cafe não conseguiu abrir as configurações.\n\n"
-                    + "Feche esta tela e continue usando o Gboard normalmente.");
+            fallback.setText("Falha: " + error.getClass().getSimpleName()
+                    + "\nEtapa: " + stage);
+            fallback.setTextColor(Color.BLACK);
             fallback.setPadding(32, 32, 32, 32);
             setContentView(fallback);
         }
     }
 
     private void buildScreen() {
+        stage = "criando a tela principal";
         int pad = dp(18);
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
@@ -83,6 +139,7 @@ public final class GboardCafeSettingsActivity extends Activity {
         intro.setPadding(0, 0, 0, dp(16));
         page.addView(intro);
 
+        stage = "criando o controle de ativação";
         enabled = new Switch(this);
         enabled.setText("Ativar efeitos nas teclas e no teclado");
         enabled.setTextColor(Color.BLACK);
@@ -90,21 +147,28 @@ public final class GboardCafeSettingsActivity extends Activity {
         page.addView(enabled);
 
         addLabel(page, "Efeito");
+        stage = "criando o seletor de efeitos por tecla";
         effect = new Spinner(this);
-        effect.setAdapter(new ArrayAdapter<String>(this,
-                android.R.layout.simple_spinner_dropdown_item, EFFECT_LABELS));
+        ArrayAdapter<String> keyAdapter = new ArrayAdapter<String>(this,
+                android.R.layout.simple_spinner_item, EFFECT_LABELS);
+        keyAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        effect.setAdapter(keyAdapter);
         String current = prefs.getString("gboard_cafe_effect", "ripple");
         effect.setSelection(indexOf(EFFECT_VALUES, current));
         page.addView(effect);
 
         addLabel(page, "Efeito na área inteira do teclado");
+        stage = "criando o seletor de efeitos do teclado";
         boardEffect = new Spinner(this);
-        boardEffect.setAdapter(new ArrayAdapter<String>(this,
-                android.R.layout.simple_spinner_dropdown_item, BOARD_EFFECT_LABELS));
+        ArrayAdapter<String> boardAdapter = new ArrayAdapter<String>(this,
+                android.R.layout.simple_spinner_item, BOARD_EFFECT_LABELS);
+        boardAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        boardEffect.setAdapter(boardAdapter);
         String currentBoard = prefs.getString("gboard_cafe_board_effect", "none");
         boardEffect.setSelection(indexOf(BOARD_EFFECT_VALUES, currentBoard));
         page.addView(boardEffect);
 
+        stage = "criando a configuração de cor";
         addLabel(page, "Cor (hexadecimal)");
         color = new EditText(this);
         color.setSingleLine(true);
@@ -112,6 +176,7 @@ public final class GboardCafeSettingsActivity extends Activity {
         color.setText(prefs.getString("gboard_cafe_color", "#CFB08E"));
         page.addView(color);
 
+        stage = "criando o controle de duração";
         addLabel(page, "Duração do efeito");
         durationValue = new TextView(this);
         duration = new SeekBar(this);
@@ -132,6 +197,7 @@ public final class GboardCafeSettingsActivity extends Activity {
         save.setOnClickListener(v -> saveSettings());
         page.addView(save);
 
+        stage = "criando os controles de layout";
         addDivider(page);
         addLabel(page, "Editor de teclas");
 
@@ -151,6 +217,7 @@ public final class GboardCafeSettingsActivity extends Activity {
         close.setOnClickListener(v -> finish());
         page.addView(close);
 
+        stage = "finalizando a tela";
         android.widget.ScrollView scroll = new android.widget.ScrollView(this);
         scroll.addView(page);
         setContentView(scroll);
