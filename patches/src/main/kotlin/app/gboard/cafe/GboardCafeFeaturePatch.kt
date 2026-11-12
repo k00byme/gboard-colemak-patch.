@@ -17,7 +17,7 @@ private val gboardCafeCompatibility = Compatibility(
 
 private val gboardCafeSettingsEntry = resourcePatch(
     name = "Gboard Cafe: settings entry",
-    description = "Adds Gboard Cafe to the existing Gboard preferences screen.",
+    description = "Adds a safe entry to open the separate Gboard Cafe settings screen.",
     default = true,
 ) {
     compatibleWith(gboardCafeCompatibility)
@@ -30,7 +30,34 @@ private val gboardCafeSettingsEntry = resourcePatch(
                 val key = existing.item(i).attributes?.getNamedItemNS(
                     "http://schemas.android.com/apk/res/android", "key"
                 )?.nodeValue
-                if (key == "gboard_cafe_settings") found = true
+                if (key == "gboard_cafe_settings") {
+                    found = true
+                    val item = existing.item(i)
+                    // Replace the old fragment route: Gboard's settings screen is
+                    // not a generic AndroidX PreferenceFragmentCompat host.
+                    val children = item.childNodes
+                    for (index in children.length - 1 downTo 0) {
+                        val child = children.item(index)
+                        if (child.nodeName == "intent") item.removeChild(child)
+                    }
+                    item.attributes.removeNamedItemNS(
+                        "http://schemas.android.com/apk/res/android", "fragment"
+                    )
+                    val intent = xml.createElement("intent")
+                    intent.setAttributeNS(
+                        "http://schemas.android.com/apk/res/android",
+                        "android:action", "android.intent.action.MAIN"
+                    )
+                    intent.setAttributeNS(
+                        "http://schemas.android.com/apk/res/android",
+                        "android:targetPackage", "com.google.android.inputmethod.latin"
+                    )
+                    intent.setAttributeNS(
+                        "http://schemas.android.com/apk/res/android",
+                        "android:targetClass", "app.gboard.cafe.runtime.GboardCafeSettingsActivity"
+                    )
+                    item.appendChild(intent)
+                }
             }
             if (!found) {
                 val ns = "http://schemas.android.com/apk/res/android"
@@ -38,8 +65,16 @@ private val gboardCafeSettingsEntry = resourcePatch(
                 item.setAttributeNS(ns, "android:key", "gboard_cafe_settings")
                 item.setAttributeNS(ns, "android:title", "Gboard Cafe")
                 item.setAttributeNS(ns, "android:summary", "Efeitos e organização das teclas")
-                item.setAttributeNS(ns, "android:fragment", "app.gboard.cafe.runtime.GboardCafeSettingsFragment")
                 item.setAttributeNS(ns, "android:order", "900")
+
+                val intent = xml.createElement("intent")
+                intent.setAttributeNS(ns, "android:action", "android.intent.action.MAIN")
+                intent.setAttributeNS(ns, "android:targetPackage", "com.google.android.inputmethod.latin")
+                intent.setAttributeNS(
+                    ns, "android:targetClass",
+                    "app.gboard.cafe.runtime.GboardCafeSettingsActivity"
+                )
+                item.appendChild(intent)
                 root.appendChild(item)
             }
         }
@@ -49,7 +84,7 @@ private val gboardCafeSettingsEntry = resourcePatch(
 @Suppress("unused")
 val gboardCafeFeaturePatch = bytecodePatch(
     name = "Gboard Cafe: effects and layout editor",
-    description = "Adds key animations and a native preferences editor to Gboard.",
+    description = "Adds fail-safe key effects and a settings-based layout editor.",
     default = true,
 ) {
     compatibleWith(gboardCafeCompatibility)
@@ -70,19 +105,25 @@ val gboardCafeFeaturePatch = bytecodePatch(
             parameters = listOf("Z", "I", "I", "I", "I"),
         )
 
+        // This hook is guarded internally and never consumes or changes the event.
         keyTouch.method.addInstructions(
             0,
             "invoke-static {p0, p1}, Lapp/gboard/cafe/runtime/GboardCafeRuntime;->onTouch(Landroid/view/View;Landroid/view/MotionEvent;)V",
         )
 
+        // Capture-only hook at every normal exit. It does not modify the keyboard tree.
         val method = keyboardLayout.method
         val instructions = method.implementation?.instructions
             ?: error("SoftKeyboardView.onLayout has no implementation")
-        val returnIndex = instructions.indexOfLast { it.opcode == Opcode.RETURN_VOID }
-        check(returnIndex >= 0) { "SoftKeyboardView.onLayout return point not found" }
-        method.addInstructions(
-            returnIndex,
-            "invoke-static {p0}, Lapp/gboard/cafe/runtime/GboardCafeRuntime;->afterLayout(Landroid/view/View;)V",
-        )
+        val returns = instructions.mapIndexedNotNull { index, instruction ->
+            if (instruction.opcode == Opcode.RETURN_VOID) index else null
+        }.asReversed()
+        check(returns.isNotEmpty()) { "SoftKeyboardView.onLayout return point not found" }
+        for (index in returns) {
+            method.addInstructions(
+                index,
+                "invoke-static {p0}, Lapp/gboard/cafe/runtime/GboardCafeRuntime;->afterLayout(Landroid/view/View;)V",
+            )
+        }
     }
 }
