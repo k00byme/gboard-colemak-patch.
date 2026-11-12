@@ -837,7 +837,7 @@ public final class GboardCafeRuntime {
             return new ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT);
         } catch (Throwable ignored) {
-            return target.generateDefaultLayoutParams();
+            return new ViewGroup.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT);
         }
     }
 
