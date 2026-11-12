@@ -476,28 +476,28 @@ public final class GboardCafeRuntime {
             }
             String[] hidden = getHiddenKeys(context);
             StringBuilder report = new StringBuilder();
-            report.append("Gboard Cafe diagnostics\\n\\n");
-            report.append("Package: ").append(context.getPackageName()).append('\\n');
+            report.append("Gboard Cafe diagnostics\n\n");
+            report.append("Package: ").append(context.getPackageName()).append('\n');
             report.append("Key effects enabled: ")
-                    .append(p.getBoolean("gboard_cafe_enabled", false)).append('\\n');
+                    .append(p.getBoolean("gboard_cafe_enabled", false)).append('\n');
             report.append("Key effect: ")
-                    .append(p.getString("gboard_cafe_effect", "ripple")).append('\\n');
+                    .append(p.getString("gboard_cafe_effect", "ripple")).append('\n');
             report.append("Board effect: ")
-                    .append(p.getString("gboard_cafe_board_effect", "none")).append('\\n');
+                    .append(p.getString("gboard_cafe_board_effect", "none")).append('\n');
             report.append("Color: ")
-                    .append(p.getString("gboard_cafe_color", "#CFB08E")).append('\\n');
+                    .append(p.getString("gboard_cafe_color", "#CFB08E")).append('\n');
             report.append("Duration: ")
-                    .append(p.getInt("gboard_cafe_duration", 260)).append(" ms\\n");
-            report.append("Captured rows: ").append(rowCount).append('\\n');
-            report.append("Captured keys: ").append(keyCount).append('\\n');
-            report.append("Hidden keys: ").append(hidden == null ? 0 : hidden.length).append('\\n');
-            report.append("Key touch hooks: ").append(keyTouchEvents).append('\\n');
-            report.append("Board touch hooks: ").append(boardTouchEvents).append('\\n');
-            report.append("Layout callbacks: ").append(layoutCallbacks).append('\\n');
+                    .append(p.getInt("gboard_cafe_duration", 260)).append(" ms\n");
+            report.append("Captured rows: ").append(rowCount).append('\n');
+            report.append("Captured keys: ").append(keyCount).append('\n');
+            report.append("Hidden keys: ").append(hidden == null ? 0 : hidden.length).append('\n');
+            report.append("Key touch hooks: ").append(keyTouchEvents).append('\n');
+            report.append("Board touch hooks: ").append(boardTouchEvents).append('\n');
+            report.append("Layout callbacks: ").append(layoutCallbacks).append('\n');
             try {
                 android.content.pm.PackageInfo info = context.getPackageManager()
                         .getPackageInfo(context.getPackageName(), 0);
-                report.append("App version: ").append(info.versionName).append('\\n');
+                report.append("App version: ").append(info.versionName).append('\n');
             } catch (Throwable ignored) {}
             return report.toString();
         } catch (Throwable error) {

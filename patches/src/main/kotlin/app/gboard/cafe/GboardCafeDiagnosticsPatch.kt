@@ -48,9 +48,8 @@ val gboardCafeDiagnosticsPatch = resourcePatch(
             val existing = root.getElementsByTagName("Preference")
             var item = (0 until existing.length)
                 .map { existing.item(it) }
-                .firstOrNull {
-                    it.attributes?.getNamedItemNS(androidNs, "key")?.nodeValue
-                        == "gboard_cafe_diagnostics"
+                .firstOrNull { node ->
+                    node.attributes?.getNamedItemNS(androidNs, "key")?.nodeValue == "gboard_cafe_diagnostics"
                 }
             if (item == null) {
                 item = xml.createElement("Preference")

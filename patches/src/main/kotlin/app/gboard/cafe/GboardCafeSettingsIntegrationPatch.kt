@@ -48,9 +48,8 @@ val gboardCafeSettingsIntegrationPatch = resourcePatch(
             val existing = root.getElementsByTagName("Preference")
             var item = (0 until existing.length)
                 .map { existing.item(it) }
-                .firstOrNull {
-                    it.attributes?.getNamedItemNS(androidNs, "key")?.nodeValue
-                        == "gboard_cafe_settings"
+                .firstOrNull { node ->
+                    node.attributes?.getNamedItemNS(androidNs, "key")?.nodeValue == "gboard_cafe_settings"
                 }
 
             if (item == null) {
