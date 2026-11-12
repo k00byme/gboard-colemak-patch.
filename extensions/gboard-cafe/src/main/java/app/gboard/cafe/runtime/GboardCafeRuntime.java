@@ -534,44 +534,97 @@ public final class GboardCafeRuntime {
 
     private static void migrateLegacyLayout(SharedPreferences p, ViewGroup root) {
         try {
-            String originalText = p.getString("gboard_cafe_original_rows", null);
-            JSONArray original = parseRows(originalText);
-            if (original == null || original.length() == 0) return;
-            boolean alreadyStable = true;
-            for (int i = 0; i < original.length() && alreadyStable; i++) {
-                JSONArray row = original.optJSONArray(i);
+            JSONArray storedOriginal = parseRows(
+                    p.getString("gboard_cafe_original_rows", null));
+            if (storedOriginal == null || storedOriginal.length() == 0) return;
+
+            boolean originalIsStable = true;
+            for (int i = 0; i < storedOriginal.length() && originalIsStable; i++) {
+                JSONArray row = storedOriginal.optJSONArray(i);
                 if (row == null) continue;
                 for (int j = 0; j < row.length(); j++) {
                     String token = row.optString(j, "");
-                    if (!token.startsWith(KEY_ID_PREFIX)) { alreadyStable = false; break; }
-                }
-            }
-            if (alreadyStable) return;
-
-            JSONArray stableOriginal = new JSONArray();
-            for (int rowIndex = 0; rowIndex < original.length(); rowIndex++) {
-                JSONArray oldRow = original.optJSONArray(rowIndex);
-                JSONArray newRow = new JSONArray();
-                Map<String, Integer> occurrences = new HashMap<>();
-                if (oldRow != null) {
-                    for (int i = 0; i < oldRow.length(); i++) {
-                        String raw = oldRow.optString(i, "");
-                        int occurrence = occurrences.containsKey(raw) ? occurrences.get(raw) : 0;
-                        occurrences.put(raw, occurrence + 1);
-                        newRow.put(makeStableKeyId(rowIndex, occurrence, raw));
+                    if (!token.startsWith(KEY_ID_PREFIX)) {
+                        originalIsStable = false;
+                        break;
                     }
                 }
-                stableOriginal.put(newRow);
             }
 
-            String customText = p.getString("gboard_cafe_custom_rows", null);
-            JSONArray custom = parseRows(customText);
-            JSONArray stableCustom = custom == null
-                    ? new JSONArray(stableOriginal.toString())
-                    : convertLegacyRows(custom, stableOriginal);
+            JSONArray stableOriginal;
+            if (originalIsStable) {
+                stableOriginal = storedOriginal;
+            } else {
+                stableOriginal = new JSONArray();
+                for (int rowIndex = 0; rowIndex < storedOriginal.length(); rowIndex++) {
+                    JSONArray oldRow = storedOriginal.optJSONArray(rowIndex);
+                    JSONArray newRow = new JSONArray();
+                    Map<String, Integer> occurrences = new HashMap<>();
+                    if (oldRow != null) {
+                        for (int i = 0; i < oldRow.length(); i++) {
+                            String raw = oldRow.optString(i, "");
+                            int occurrence = occurrences.containsKey(raw)
+                                    ? occurrences.get(raw) : 0;
+                            occurrences.put(raw, occurrence + 1);
+                            newRow.put(makeStableKeyId(rowIndex, occurrence, raw));
+                        }
+                    }
+                    stableOriginal.put(newRow);
+                }
+            }
 
-            p.edit().putString("gboard_cafe_original_rows", stableOriginal.toString())
-                    .putString("gboard_cafe_custom_rows", stableCustom.toString()).apply();
+            JSONArray storedCustom = parseRows(
+                    p.getString("gboard_cafe_custom_rows", null));
+            JSONArray stableCustom;
+            if (storedCustom == null) {
+                stableCustom = new JSONArray(stableOriginal.toString());
+            } else {
+                boolean customIsStable = true;
+                for (int i = 0; i < storedCustom.length() && customIsStable; i++) {
+                    JSONArray row = storedCustom.optJSONArray(i);
+                    if (row == null) continue;
+                    for (int j = 0; j < row.length(); j++) {
+                        String token = row.optString(j, "");
+                        if (!token.startsWith(KEY_ID_PREFIX)
+                                && !token.startsWith(CUSTOM_KEY_PREFIX)) {
+                            customIsStable = false;
+                            break;
+                        }
+                    }
+                }
+                stableCustom = customIsStable
+                        ? storedCustom
+                        : convertLegacyRows(storedCustom, stableOriginal);
+            }
+
+            // The old editor persisted hidden keys by their display label. Translate
+            // those exclusions into the new stable-token model so an upgrade does
+            // not silently bring previously removed keys back.
+            Set<String> legacyHidden = p.getStringSet(
+                    "gboard_cafe_hidden_keys", Collections.<String>emptySet());
+            SharedPreferences.Editor editor = p.edit()
+                    .putString("gboard_cafe_original_rows", stableOriginal.toString())
+                    .putString("gboard_cafe_custom_rows", stableCustom.toString());
+            if (legacyHidden != null && !legacyHidden.isEmpty()) {
+                JSONArray filtered = new JSONArray();
+                for (int i = 0; i < stableCustom.length(); i++) {
+                    JSONArray row = stableCustom.optJSONArray(i);
+                    JSONArray next = new JSONArray();
+                    if (row != null) {
+                        for (int j = 0; j < row.length(); j++) {
+                            String token = row.optString(j, "");
+                            if (!legacyHidden.contains(token)
+                                    && !legacyHidden.contains(getDisplayLabel(token))) {
+                                next.put(token);
+                            }
+                        }
+                    }
+                    filtered.put(next);
+                }
+                editor.putString("gboard_cafe_custom_rows", filtered.toString())
+                        .remove("gboard_cafe_hidden_keys");
+            }
+            editor.apply();
             assignStableIds(root, stableOriginal);
         } catch (Throwable ignored) {}
     }
@@ -938,6 +991,7 @@ public final class GboardCafeRuntime {
             this.y = y;
             startedAt = SystemClock.uptimeMillis();
             removalPosted = false;
+            host.postDelayed(() -> postRemoval(), duration + 40L);
         }
 
         @Override public void draw(Canvas canvas) {
@@ -1070,6 +1124,7 @@ public final class GboardCafeRuntime {
             this.y = y;
             startedAt = SystemClock.uptimeMillis();
             removalPosted = false;
+            host.postDelayed(() -> postRemoval(), duration + 40L);
         }
 
         @Override public void draw(Canvas canvas) {
