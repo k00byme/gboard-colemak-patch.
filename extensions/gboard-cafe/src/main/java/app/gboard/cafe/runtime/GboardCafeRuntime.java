@@ -34,6 +34,8 @@ public final class GboardCafeRuntime {
     private static final String KEY_CLASS =
             "com.google.android.libraries.inputmethod.widgets.SoftKeyView";
     private static final WeakHashMap<View, EffectDrawable> EFFECTS = new WeakHashMap<>();
+    private static final WeakHashMap<View, BoardEffectDrawable> BOARD_EFFECTS = new WeakHashMap<>();
+    private static final WeakHashMap<View, Boolean> PENDING_LAYOUT = new WeakHashMap<>();
     private static WeakReference<View> lastKeyboard = new WeakReference<>(null);
 
     private GboardCafeRuntime() {}
@@ -91,30 +93,140 @@ public final class GboardCafeRuntime {
         }
     }
 
+    /** Injected at the start of SoftKeyboardView.dispatchTouchEvent(MotionEvent). */
+    public static void onBoardTouch(View keyboard, MotionEvent event) {
+        try {
+            if (keyboard == null || event == null) return;
+            SharedPreferences p = prefs(keyboard.getContext());
+            if (!p.getBoolean("gboard_cafe_enabled", false)) return;
+            String effect = p.getString("gboard_cafe_board_effect", "none");
+            if (TextUtils.isEmpty(effect) || "none".equals(effect)) return;
+
+            int action = event.getActionMasked();
+            BoardEffectDrawable drawable = BOARD_EFFECTS.get(keyboard);
+            int pointer = Math.max(0, Math.min(event.getActionIndex(), event.getPointerCount() - 1));
+            float x = event.getX(pointer);
+            float y = event.getY(pointer);
+
+            if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
+                if (drawable != null) {
+                    try { keyboard.getOverlay().remove(drawable); } catch (Throwable ignored) {}
+                }
+                int color;
+                try { color = Color.parseColor(p.getString("gboard_cafe_color", "#FFCFB08E")); }
+                catch (Throwable ignored) { color = 0xFFCFB08E; }
+                int duration = clamp(p.getInt("gboard_cafe_duration", 260), 80, 1200);
+                drawable = new BoardEffectDrawable(keyboard, effect, color, duration);
+                BOARD_EFFECTS.put(keyboard, drawable);
+                drawable.setBounds(0, 0, Math.max(1, keyboard.getWidth()), Math.max(1, keyboard.getHeight()));
+                keyboard.getOverlay().add(drawable);
+                drawable.start(x, y);
+                keyboard.postInvalidateOnAnimation();
+            } else if (drawable != null && action == MotionEvent.ACTION_MOVE) {
+                drawable.move(x, y);
+                keyboard.postInvalidateOnAnimation();
+            } else if (drawable != null && (action == MotionEvent.ACTION_UP ||
+                    action == MotionEvent.ACTION_POINTER_UP || action == MotionEvent.ACTION_CANCEL)) {
+                drawable.release();
+                keyboard.postInvalidateOnAnimation();
+            }
+        } catch (Throwable ignored) {
+            // Never consume or alter Gboard's real touch event.
+        }
+    }
+
     /**
-     * Injected after SoftKeyboardView.onLayout. It only observes the view tree.
-     * It never removes, inserts, hides, or reorders keyboard views during layout.
+     * Called after Gboard lays out the keyboard. Saved changes are applied on the
+     * next UI-queue turn, never while Gboard is executing its own onLayout method.
      */
     public static void afterLayout(View keyboard) {
         try {
             if (!(keyboard instanceof ViewGroup)) return;
             lastKeyboard = new WeakReference<>(keyboard);
-
             SharedPreferences p = prefs(keyboard.getContext());
             String original = p.getString("gboard_cafe_original_rows", null);
             if (TextUtils.isEmpty(original)) {
                 JSONArray captured = captureRows((ViewGroup) keyboard);
-                if (captured.length() > 0) {
+                if (isPrimaryLayout(captured)) {
                     String encoded = captured.toString();
-                    p.edit()
-                            .putString("gboard_cafe_original_rows", encoded)
-                            .putString("gboard_cafe_custom_rows", encoded)
-                            .apply();
+                    p.edit().putString("gboard_cafe_original_rows", encoded)
+                            .putString("gboard_cafe_custom_rows", encoded).apply();
+                }
+            } else if (hasCustomization(p)) {
+                scheduleApply(keyboard);
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    private static boolean isPrimaryLayout(JSONArray rows) {
+        if (rows == null || rows.length() < 3) return false;
+        int total = 0;
+        for (int i = 0; i < rows.length(); i++) {
+            JSONArray row = rows.optJSONArray(i);
+            if (row == null || row.length() < 2) return false;
+            total += row.length();
+        }
+        return total >= 20;
+    }
+
+    private static boolean hasCustomization(SharedPreferences p) {
+        try {
+            String original = p.getString("gboard_cafe_original_rows", null);
+            String custom = p.getString("gboard_cafe_custom_rows", null);
+            Set<String> hidden = p.getStringSet("gboard_cafe_hidden_keys", Collections.<String>emptySet());
+            return (original != null && custom != null && !original.equals(custom))
+                    || (hidden != null && !hidden.isEmpty());
+        } catch (Throwable ignored) { return false; }
+    }
+
+    private static void scheduleApply(final View keyboard) {
+        try {
+            if (keyboard == null || PENDING_LAYOUT.containsKey(keyboard)) return;
+            PENDING_LAYOUT.put(keyboard, Boolean.TRUE);
+            keyboard.post(() -> {
+                PENDING_LAYOUT.remove(keyboard);
+                try {
+                    if (keyboard instanceof ViewGroup && layoutNeedsApply((ViewGroup) keyboard)) {
+                        applySavedLayout((ViewGroup) keyboard);
+                        keyboard.requestLayout();
+                        keyboard.invalidate();
+                    }
+                } catch (Throwable ignored) {}
+            });
+        } catch (Throwable ignored) {}
+    }
+
+    private static boolean layoutNeedsApply(ViewGroup root) {
+        try {
+            SharedPreferences p = prefs(root.getContext());
+            JSONArray desired = parseRows(p.getString("gboard_cafe_custom_rows", null));
+            if (desired == null) return false;
+            JSONArray current = captureRows(root);
+            if (current.length() != desired.length()) return true;
+            for (int i = 0; i < desired.length(); i++) {
+                JSONArray want = desired.optJSONArray(i);
+                JSONArray have = current.optJSONArray(i);
+                if (want == null || have == null || !want.toString().equals(have.toString())) return true;
+            }
+            Set<String> hidden = p.getStringSet("gboard_cafe_hidden_keys", Collections.<String>emptySet());
+            return hasVisibilityMismatch(root, hidden == null ? Collections.<String>emptySet() : hidden);
+        } catch (Throwable ignored) { return false; }
+    }
+
+    private static boolean hasVisibilityMismatch(ViewGroup group, Set<String> hidden) {
+        try {
+            for (int i = 0; i < group.getChildCount(); i++) {
+                View child = group.getChildAt(i);
+                if (isKey(child)) {
+                    int expected = hidden.contains(label(child)) ? View.GONE : View.VISIBLE;
+                    if (child.getVisibility() != expected) return true;
+                } else if (child instanceof ViewGroup &&
+                        hasVisibilityMismatch((ViewGroup) child, hidden)) {
+                    return true;
                 }
             }
-        } catch (Throwable ignored) {
-            // Observation is optional; the keyboard must remain usable.
-        }
+        } catch (Throwable ignored) {}
+        return false;
     }
 
     public static String[][] getRows(Context context) {
@@ -194,17 +306,7 @@ public final class GboardCafeRuntime {
     private static void refreshKeyboard() {
         try {
             final View view = lastKeyboard.get();
-            if (view == null) return;
-            // Apply only after an explicit user save, outside Gboard's onLayout pass.
-            view.post(() -> {
-                try {
-                    if (view instanceof ViewGroup) {
-                        applySavedLayout((ViewGroup) view);
-                        view.requestLayout();
-                        view.invalidate();
-                    }
-                } catch (Throwable ignored) {}
-            });
+            if (view != null) scheduleApply(view);
         } catch (Throwable ignored) {}
     }
 
@@ -257,7 +359,7 @@ public final class GboardCafeRuntime {
                 if (isKey(child)) labels.add(label(child));
                 else onlyKeys = false;
             }
-            if (onlyKeys && labels.size() >= 2) {
+            if (onlyKeys && labels.size() >= 2 && new HashSet<>(labels).size() == labels.size()) {
                 JSONArray row = new JSONArray();
                 for (String name : labels) row.put(name);
                 result.put(row);
@@ -351,6 +453,136 @@ public final class GboardCafeRuntime {
 
     private static int clamp(int value, int minimum, int maximum) {
         return Math.max(minimum, Math.min(maximum, value));
+    }
+
+    private static final class BoardEffectDrawable extends Drawable {
+        private final View host;
+        private final String effect;
+        private final int color;
+        private final int duration;
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final RectF rect = new RectF();
+        private float x;
+        private float y;
+        private long startedAt;
+        private long releasedAt;
+        private boolean released;
+        private boolean removalPosted;
+
+        BoardEffectDrawable(View host, String effect, int color, int duration) {
+            this.host = host;
+            this.effect = effect;
+            this.color = color;
+            this.duration = duration;
+            paint.setStrokeCap(Paint.Cap.ROUND);
+            paint.setStrokeJoin(Paint.Join.ROUND);
+        }
+
+        void start(float x, float y) {
+            this.x = x; this.y = y;
+            startedAt = SystemClock.uptimeMillis();
+            released = false; removalPosted = false;
+        }
+        void move(float x, float y) { this.x = x; this.y = y; }
+        void release() {
+            if (!released) {
+                released = true;
+                releasedAt = SystemClock.uptimeMillis();
+            }
+        }
+
+        @Override public void draw(Canvas canvas) {
+            try {
+                long now = SystemClock.uptimeMillis();
+                float progress = Math.min(1f, Math.max(0f, (now - startedAt) / (float) duration));
+                float fade = released ? Math.max(0f, 1f - (now - releasedAt) / 220f) : 1f;
+                float diagonal = (float) Math.hypot(host.getWidth(), host.getHeight());
+                float reach = Math.max(24f, diagonal * 0.48f) * progress;
+                paint.setColor(color);
+                paint.setAlpha((int) (220f * fade));
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setStrokeWidth(2.4f);
+
+                switch (effect) {
+                    case "ring":
+                        canvas.drawCircle(x, y, 8f + reach, paint);
+                        canvas.drawCircle(x, y, 4f + reach * 0.62f, paint);
+                        canvas.drawCircle(x, y, 2f + reach * 0.28f, paint);
+                        break;
+                    case "outline":
+                        rect.set(2f + reach * 0.05f, 2f + reach * 0.05f,
+                                host.getWidth() - 2f - reach * 0.05f,
+                                host.getHeight() - 2f - reach * 0.05f);
+                        canvas.drawRoundRect(rect, 18f, 18f, paint);
+                        break;
+                    case "spark":
+                    case "sparkSpin":
+                    case "firecracker": {
+                        int count = "firecracker".equals(effect) ? 14 : 9;
+                        float rotation = "sparkSpin".equals(effect) ? progress * 2.4f : 0f;
+                        paint.setStrokeWidth("firecracker".equals(effect) ? 3.1f : 2.2f);
+                        for (int i = 0; i < count; i++) {
+                            double angle = (Math.PI * 2d * i / count) + rotation;
+                            float dx = (float) Math.cos(angle);
+                            float dy = (float) Math.sin(angle);
+                            float inner = 5f + reach * 0.16f;
+                            float outer = 9f + reach * (0.58f + (i % 3) * 0.08f);
+                            canvas.drawLine(x + dx * inner, y + dy * inner,
+                                    x + dx * outer, y + dy * outer, paint);
+                            if ("firecracker".equals(effect)) {
+                                canvas.drawCircle(x + dx * outer, y + dy * outer, 2.4f, paint);
+                            }
+                        }
+                        break;
+                    }
+                    case "blob":
+                    case "blobSpread":
+                    case "paintGun": {
+                        paint.setStyle(Paint.Style.FILL);
+                        float radius = "blob".equals(effect) ? 18f + progress * 18f :
+                                ("blobSpread".equals(effect) ? 12f + reach * 0.42f : 9f + reach * 0.18f);
+                        paint.setAlpha((int) (("paintGun".equals(effect) ? 105f : 80f) * fade));
+                        canvas.drawCircle(x, y, radius, paint);
+                        int count = "paintGun".equals(effect) ? 11 : 8;
+                        for (int i = 0; i < count; i++) {
+                            double angle = (Math.PI * 2d * i / count) + (i * 0.17d);
+                            float spread = radius * ("paintGun".equals(effect) ? 1.45f : 0.72f);
+                            float dx = (float) Math.cos(angle);
+                            float dy = (float) Math.sin(angle);
+                            float dot = radius * (0.20f + (i % 3) * 0.05f);
+                            canvas.drawCircle(x + dx * spread, y + dy * spread, dot, paint);
+                            if ("paintGun".equals(effect) && i % 2 == 0) {
+                                paint.setStyle(Paint.Style.STROKE);
+                                canvas.drawCircle(x + dx * spread * 1.3f,
+                                        y + dy * spread * 1.3f, dot * 1.6f, paint);
+                                paint.setStyle(Paint.Style.FILL);
+                            }
+                        }
+                        break;
+                    }
+                    default: break;
+                }
+
+                if (released && fade <= 0f) postRemoval();
+                else if ((!released && progress < 1f) || (released && fade > 0f)) {
+                    host.postInvalidateOnAnimation();
+                }
+            } catch (Throwable ignored) { postRemoval(); }
+        }
+
+        private void postRemoval() {
+            if (removalPosted) return;
+            removalPosted = true;
+            host.post(() -> {
+                try { host.getOverlay().remove(this); } catch (Throwable ignored) {}
+                BOARD_EFFECTS.remove(host);
+            });
+        }
+        @Override public void setAlpha(int alpha) { paint.setAlpha(alpha); invalidateSelf(); }
+        @Override public void setColorFilter(android.graphics.ColorFilter filter) {
+            paint.setColorFilter(filter); invalidateSelf();
+        }
+        @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }
     }
 
     private static final class EffectDrawable extends Drawable {
@@ -447,6 +679,33 @@ public final class GboardCafeRuntime {
                         paint.setAlpha((int) (100 * fade));
                         canvas.drawCircle(x, y, 10f + progress * maximum * 0.42f, paint);
                         break;
+                    case "blob":
+                    case "blobSpread": {
+                        paint.setStyle(Paint.Style.FILL);
+                        paint.setAlpha((int) ("blob".equals(effect) ? 150 * fade : 105 * fade));
+                        float spread = 5f + progress * ("blob".equals(effect) ? 10f : 24f);
+                        canvas.drawCircle(x, y, spread * 0.78f, paint);
+                        for (int i = 0; i < 7; i++) {
+                            double angle = i * Math.PI * 2d / 7d;
+                            float dx = (float) Math.cos(angle);
+                            float dy = (float) Math.sin(angle);
+                            canvas.drawCircle(x + dx * spread * 0.72f,
+                                    y + dy * spread * 0.72f, spread * 0.43f, paint);
+                        }
+                        break;
+                    }
+                    case "footprint": {
+                        paint.setStyle(Paint.Style.FILL);
+                        paint.setAlpha((int) (145 * fade));
+                        float size = 3f + 4f * progress;
+                        canvas.drawOval(x - size * 0.8f, y - size * 1.8f,
+                                x + size * 0.8f, y + size * 1.8f, paint);
+                        for (int i = 0; i < 4; i++) {
+                            float toe = size * (i - 1.5f) * 0.72f;
+                            canvas.drawCircle(x + toe, y - size * 2.3f, size * 0.35f, paint);
+                        }
+                        break;
+                    }
                     case "ripple":
                     default:
                         paint.setStyle(Paint.Style.STROKE);

@@ -1,47 +1,52 @@
 # Reverse engineering notes
 
 Target APKs supplied for this project:
-
 - Gboard XAPK: `18.5.4.993608717-release-arm64-v8a`
 - Samsung Keys Cafe APK: `1.8.00.13`
 
-## Gboard findings
+## Confirmed Gboard surfaces
 
-The XAPK contains the base Gboard APK plus six configuration/feature splits. The base APK contains four DEX files and obfuscated resource XML names.
+The XAPK contains the Gboard base APK plus configuration/feature splits. The base APK has four DEX files and obfuscated resource XML names.
 
-Confirmed resource and code surfaces in the supplied build:
+Confirmed resources:
+- `res/PWn.xml`: soft-key definition schema (`softkeys`, `softkey_list`, `softkey`, `press_data`, `long_press_data`, `template_id`).
+- `res/VvI.xml`: another concrete soft-key definition resource.
+- `res/iXt.xml`: keyboard variant metadata.
+- `res/0CM.xml`: Gboard settings preference screen, where the Gboard Cafe entry is inserted.
 
-- `res/PWn.xml` contains Gboard's soft-key layout schema: `softkeys`, `softkey_list`, `softkey`, `press_data`, `long_press_data`, `template_id`.
-- `res/VvI.xml` also contains the soft-key list schema and is a concrete keyboard-definition resource.
-- `res/iXt.xml` contains keyboard variant metadata, including `keyboard_group`, `variant`, `variant_label`, and `force_show_number_row`.
-- DEX class names include:
-  - `com.google.android.libraries.inputmethod.widgets.SoftKeyView`
-  - `com.google.android.libraries.inputmethod.widgets.SoftKeyboardView`
-  - `com.google.android.libraries.inputmethod.keyboard.impl.SoftKeyViewsMapper`
-  - `com.google.android.libraries.inputmethod.metadata.KeyboardDefManager`
-  - `com.google.android.libraries.inputmethod.metadata.KeyboardDef`
-  - `com.google.android.libraries.inputmethod.metadata.KeyboardViewDef`
-  - `com.google.android.apps.inputmethod.libs.theme.builder.ThemeBuilderActivity`
-  - `com.google.android.apps.inputmethod.libs.theme.builder.ThemeEditorActivity`
-- DEX strings confirm `SoftKeyView.setSoftKeyDef`, `SoftKeyView.onMeasure`, `SoftKeyViewsMapper.initSoftKeyViews`, `SoftKeyViewsMapper.updateSoftKeyViews`, and `KeyboardDefManager.loadKeyboardDefFromXml`.
+Confirmed DEX class/method signatures in the supplied build:
+- `SoftKeyView.onTouchEvent(android.view.MotionEvent): boolean`
+- `SoftKeyboardView.dispatchTouchEvent(android.view.MotionEvent): boolean`
+- `SoftKeyboardView.onLayout(boolean, int, int, int, int): void`
+- `KeyboardDef`, `KeyboardViewDef`, and `SoftKeyDef`
 
-These findings establish that Gboard has a structured key-definition layer and a separate view-mapping layer. They do not yet establish exact method prototypes or safe injection points. Those must be fingerprinted against the supplied DEX before adding bytecode hooks.
+The hooks match the exact Gboard package, version, class, method name, return type, and parameters. Touch helpers are fail-safe and do not consume or replace the original Gboard event. The layout observer runs after Gboard's original `onLayout` returns.
+
+Strings resembling `SoftKeyViewsMapper` and `KeyboardDefManager` occur in DEX strings but are not treated as verified class definitions or hook targets.
 
 ## Keys Cafe findings
 
-The supplied Keys Cafe DEX contains Samsung-specific HoneyTea classes and abstractions, including:
+The supplied Keys Cafe DEX contains Samsung-specific HoneyTea abstractions:
+- Interfaces/base: `IEffector`, `ColorEffector`, `EffectAlpha`
+- Key effects: `KeyBlobEffector`, `KeyBlobSpreadEffector`, `KeyColorFlashEffector`, `KeyFootPrintEffector`, `KeyOutlineEffector`, `KeySparkEffector`
+- Key motion: `KeyBounceEffecter`, `KeyBounceTouchEffecter`, `KeyRotateEffecter`, `KeySpringEffecter`, `KeyTiltEffector`
+- Board effects: `BoardBlobEffector`, `BoardBlobSpreadEffector`, `BoardFireCrackerEffector`, `BoardOutlineEffector`, `BoardPaintGunEffector`, `BoardRingSpreadEffector`, `BoardSparkEffector`, `BoardSparkSpinEffector`
 
-- `HoneyTeaKeyViewModel`, `HoneyTeaKeyboardViewModel`, and `HoneyTeaTouchInfo`
-- `IEffector`
-- `EffectAlpha`, `BlobSpreadAlpha`, and `PaintGunAlpha`
-- `HoneyTeaKeyView` and `HoneyTeaKeyboardViewHolder`
+They depend on Samsung Honeyboard plugin interfaces and are not drop-in Gboard components. Gboard Cafe recreates selected behavior using original procedural drawing code and does not include Samsung bytecode or assets.
 
-This supports the decision to recreate the visual behavior rather than transplant the Samsung classes. Keys Cafe is coupled to Honeyboard plugin interfaces and Samsung package namespaces; its implementation is not a drop-in Gboard library.
+## Current implementation
 
-## Implementation boundary
+- Key-level effects render on the touched Gboard key overlay.
+- Whole-keyboard effects render on the SoftKeyboardView overlay.
+- Gboard's own settings screen links to a settings Activity inside the Gboard package.
+- The editor stores the captured key order, reorders existing keys within a row, and can hide/show keys.
+- Saved order/visibility is reapplied after Gboard rebuilds the keyboard view tree when the current key-row structure still matches the saved layout.
+- Initial capture requires at least three rows and twenty keys to avoid PIN/numeric layouts.
 
-1. Implement visual effects as original Gboard-side drawing/animation code, driven by key touch state. Do not copy Samsung bytecode or assets.
-2. Implement layout editing by storing a user layout model and applying it to Gboard's key-definition pipeline. Preserve the original layout as the reset/fallback state.
-3. Add the editor entry point only after the target settings/activity flow is fingerprinted. Do not guess an Activity or preference resource.
-4. Every bytecode hook must have a version-specific fingerprint and a strict match-count assertion. A patch must fail closed if the target changes.
-5. The current discovery patch is an analysis patch, not a user-facing feature patch.
+## Not yet validated on a device
+
+The project compiles in CI, but has not yet been patched, installed, or exercised on the Galaxy A15. In particular:
+- Exact visual behavior, animation timing, and touch/multitouch interaction need physical-device tests.
+- Reordering is limited to keys within an existing row; new keys and cross-row movement are not implemented.
+- Locale variants, symbol pages, number pads, tablet/floating layouts, and accessibility require separate validation.
+- Only the supplied Gboard version is targeted. Updates require fresh DEX/resource inspection.

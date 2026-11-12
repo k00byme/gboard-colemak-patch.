@@ -20,6 +20,8 @@ enum class BoardEffect {
     BLOB_SPREAD,
     OUTLINE_WAVE,
     PAINT_GUN,
+    FIRECRACKER,
+    SPARK,
 }
 
 /** Values are bounded here so malformed settings cannot create extreme animations. */

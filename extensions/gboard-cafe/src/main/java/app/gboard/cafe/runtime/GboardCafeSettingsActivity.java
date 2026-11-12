@@ -24,16 +24,26 @@ import java.util.Set;
 
 public final class GboardCafeSettingsActivity extends Activity {
     private static final String[] EFFECT_VALUES = {
-            "ripple", "flash", "outline", "bounce", "sparks", "paint", "none"
+            "ripple", "flash", "outline", "bounce", "sparks", "paint",
+            "blob", "blobSpread", "footprint", "none"
     };
     private static final String[] EFFECT_LABELS = {
             "Ripple", "Flash de cor", "Contorno pulsante", "Bounce",
-            "Partículas", "Tinta", "Desativado"
+            "Partículas", "Tinta", "Blob", "Blob expansivo", "Pegadas", "Desativado"
+    };
+    private static final String[] BOARD_EFFECT_VALUES = {
+            "ring", "spark", "sparkSpin", "firecracker", "blob",
+            "blobSpread", "outline", "paintGun", "none"
+    };
+    private static final String[] BOARD_EFFECT_LABELS = {
+            "Anéis expansivos", "Faíscas", "Faíscas giratórias", "Fogos",
+            "Blob", "Blob expansivo", "Onda de contorno", "Paint gun", "Desativado"
     };
 
     private SharedPreferences prefs;
     private Switch enabled;
     private Spinner effect;
+    private Spinner boardEffect;
     private EditText color;
     private SeekBar duration;
     private TextView durationValue;
@@ -74,7 +84,7 @@ public final class GboardCafeSettingsActivity extends Activity {
         page.addView(intro);
 
         enabled = new Switch(this);
-        enabled.setText("Ativar efeitos ao pressionar");
+        enabled.setText("Ativar efeitos nas teclas e no teclado");
         enabled.setTextColor(Color.BLACK);
         enabled.setChecked(prefs.getBoolean("gboard_cafe_enabled", false));
         page.addView(enabled);
@@ -86,6 +96,14 @@ public final class GboardCafeSettingsActivity extends Activity {
         String current = prefs.getString("gboard_cafe_effect", "ripple");
         effect.setSelection(indexOf(EFFECT_VALUES, current));
         page.addView(effect);
+
+        addLabel(page, "Efeito na área inteira do teclado");
+        boardEffect = new Spinner(this);
+        boardEffect.setAdapter(new ArrayAdapter<String>(this,
+                android.R.layout.simple_spinner_dropdown_item, BOARD_EFFECT_LABELS));
+        String currentBoard = prefs.getString("gboard_cafe_board_effect", "none");
+        boardEffect.setSelection(indexOf(BOARD_EFFECT_VALUES, currentBoard));
+        page.addView(boardEffect);
 
         addLabel(page, "Cor (hexadecimal)");
         color = new EditText(this);
@@ -148,9 +166,12 @@ public final class GboardCafeSettingsActivity extends Activity {
         }
         int selected = effect.getSelectedItemPosition();
         String effectValue = EFFECT_VALUES[Math.max(0, Math.min(selected, EFFECT_VALUES.length - 1))];
+        int selectedBoard = boardEffect.getSelectedItemPosition();
+        String boardEffectValue = BOARD_EFFECT_VALUES[Math.max(0, Math.min(selectedBoard, BOARD_EFFECT_VALUES.length - 1))];
         prefs.edit()
                 .putBoolean("gboard_cafe_enabled", enabled.isChecked())
                 .putString("gboard_cafe_effect", effectValue)
+                .putString("gboard_cafe_board_effect", boardEffectValue)
                 .putString("gboard_cafe_color", String.format("#%08X", parsed))
                 .putInt("gboard_cafe_duration", duration.getProgress() + 80)
                 .apply();

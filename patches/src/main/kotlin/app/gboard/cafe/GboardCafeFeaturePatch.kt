@@ -134,11 +134,23 @@ val gboardCafeFeaturePatch = bytecodePatch(
             returnType = "Z",
             parameters = listOf("Landroid/view/MotionEvent;"),
         )
+        val keyboardTouch = Fingerprint(
+            definingClass = "Lcom/google/android/libraries/inputmethod/widgets/SoftKeyboardView;",
+            name = "dispatchTouchEvent",
+            returnType = "Z",
+            parameters = listOf("Landroid/view/MotionEvent;"),
+        )
         val keyboardLayout = Fingerprint(
             definingClass = "Lcom/google/android/libraries/inputmethod/widgets/SoftKeyboardView;",
             name = "onLayout",
             returnType = "V",
             parameters = listOf("Z", "I", "I", "I", "I"),
+        )
+
+        // Draw a whole-keyboard effect without consuming the original event.
+        keyboardTouch.method.addInstructions(
+            0,
+            "invoke-static {p0, p1}, Lapp/gboard/cafe/runtime/GboardCafeRuntime;->onBoardTouch(Landroid/view/View;Landroid/view/MotionEvent;)V",
         )
 
         // This hook is guarded internally and never consumes or changes the event.
