@@ -12,7 +12,6 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ListView;
-import android.widget.SeekBar;
 import android.widget.Spinner;
 import android.widget.Switch;
 import android.widget.TextView;
@@ -46,8 +45,12 @@ public final class GboardCafeSettingsActivity extends Activity {
     private Spinner effect;
     private Spinner boardEffect;
     private EditText color;
-    private SeekBar duration;
-    private TextView durationValue;
+    private Spinner duration;
+    private static final int[] DURATION_VALUES = {80, 120, 180, 260, 350, 500, 700, 900, 1200};
+    private static final String[] DURATION_LABELS = {
+            "80 ms", "120 ms", "180 ms", "260 ms", "350 ms",
+            "500 ms", "700 ms", "900 ms", "1200 ms"
+    };
     private String stage = "inicialização";
 
     @Override protected void onCreate(Bundle state) {
@@ -178,19 +181,13 @@ public final class GboardCafeSettingsActivity extends Activity {
 
         stage = "criando o controle de duração";
         addLabel(page, "Duração do efeito");
-        durationValue = new TextView(this);
-        duration = new SeekBar(this);
-        duration.setMax(1120);
-        duration.setProgress(clamp(prefs.getInt("gboard_cafe_duration", 260), 80, 1200) - 80);
-        durationValue.setText((duration.getProgress() + 80) + " ms");
-        duration.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override public void onProgressChanged(SeekBar bar, int value, boolean fromUser) {
-                durationValue.setText((value + 80) + " ms");
-            }
-            @Override public void onStartTrackingTouch(SeekBar bar) {}
-            @Override public void onStopTrackingTouch(SeekBar bar) {}
-        });
-        page.addView(durationValue);
+        duration = new Spinner(this);
+        ArrayAdapter<String> durationAdapter = new ArrayAdapter<String>(this,
+                android.R.layout.simple_spinner_item, DURATION_LABELS);
+        durationAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        duration.setAdapter(durationAdapter);
+        duration.setSelection(indexOfDuration(
+                clamp(prefs.getInt("gboard_cafe_duration", 260), 80, 1200)));
         page.addView(duration);
 
         Button save = button("Salvar efeitos");
@@ -240,7 +237,7 @@ public final class GboardCafeSettingsActivity extends Activity {
                 .putString("gboard_cafe_effect", effectValue)
                 .putString("gboard_cafe_board_effect", boardEffectValue)
                 .putString("gboard_cafe_color", String.format("#%08X", parsed))
-                .putInt("gboard_cafe_duration", duration.getProgress() + 80)
+                .putInt("gboard_cafe_duration", DURATION_VALUES[Math.max(0, Math.min(duration.getSelectedItemPosition(), DURATION_VALUES.length - 1))])
                 .apply();
         android.widget.Toast.makeText(this, "Configurações salvas", android.widget.Toast.LENGTH_SHORT).show();
     }
@@ -377,6 +374,20 @@ public final class GboardCafeSettingsActivity extends Activity {
 
     private int dp(float value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+
+    private int indexOfDuration(int value) {
+        int best = 0;
+        int distance = Integer.MAX_VALUE;
+        for (int i = 0; i < DURATION_VALUES.length; i++) {
+            int currentDistance = Math.abs(DURATION_VALUES[i] - value);
+            if (currentDistance < distance) {
+                distance = currentDistance;
+                best = i;
+            }
+        }
+        return best;
     }
 
     private int indexOf(String[] values, String target) {
