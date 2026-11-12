@@ -459,7 +459,7 @@ public final class GboardCafeRuntime {
 
                 if (released && fade <= 0f) {
                     postRemoval();
-                } else if (!released || fade > 0f) {
+                } else if ((!released && progress < 1f) || (released && fade > 0f)) {
                     host.postInvalidateOnAnimation();
                 }
             } catch (Throwable ignored) {
