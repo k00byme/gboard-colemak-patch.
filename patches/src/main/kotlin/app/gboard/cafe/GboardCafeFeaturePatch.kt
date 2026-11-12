@@ -40,9 +40,13 @@ private val gboardCafeSettingsEntry = resourcePatch(
                         val child = children.item(index)
                         if (child.nodeName == "intent") item.removeChild(child)
                     }
-                    item.attributes.removeNamedItemNS(
-                        "http://schemas.android.com/apk/res/android", "fragment"
-                    )
+                    if (item.attributes.getNamedItemNS(
+                            "http://schemas.android.com/apk/res/android", "fragment"
+                        ) != null) {
+                        item.attributes.removeNamedItemNS(
+                            "http://schemas.android.com/apk/res/android", "fragment"
+                        )
+                    }
                     val intent = xml.createElement("intent")
                     intent.setAttributeNS(
                         "http://schemas.android.com/apk/res/android",
