@@ -26,7 +26,7 @@ val gboardCafeDiscoveryPatch = resourcePatch(
     compatibleWith(gboardCompatibility)
 
     execute {
-        val entries = listApkEntries()
+        val entries = listApkEntries("")
         val candidates = entries.filter { path ->
             path.startsWith("res/xml/") ||
                 path.startsWith("res/layout/") ||
