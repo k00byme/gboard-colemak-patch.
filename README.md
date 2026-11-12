@@ -11,7 +11,7 @@ O restante dos recursos do Keys Cafe é secundário e só será considerado depo
 
 ## Estado atual
 
-Este repositório foi reiniciado para substituir o protótipo anterior de layout QWERTZ/Colemak. A primeira etapa é uma base de compilação e documentação; ainda não há um patch funcional que injete os efeitos ou o editor no Gboard. Não instale um artefato deste estágio esperando essas funções.
+Este repositório foi reiniciado para substituir o protótipo anterior de layout QWERTZ/Colemak. Os APKs fornecidos já foram inspecionados. O repositório agora contém os alvos reais de recursos/classes identificados, um modelo de layout editável com validações e um catálogo inicial de efeitos. Ainda não há integração runtime dos efeitos nem do editor no Gboard. Não instale um artefato deste estágio esperando essas funções.
 
 ## Alvo inicial
 
@@ -29,13 +29,14 @@ Este repositório foi reiniciado para substituir o protótipo anterior de layout
 
 ## Estrutura
 
-- `patches/`: código Kotlin dos patches Morphe.
+- `patches/`: código Kotlin dos patches Morphe e modelos de efeitos/layout.
+- `.github/workflows/build.yml`: compilação automática com JDK 17.
 - `docs/REVERSE_ENGINEERING.md`: achados e plano de análise.
 - `docs/IMPLEMENTATION_PLAN.md`: etapas e critérios de aceite.
 
 ## Compilar
 
-Requisitos: JDK 21, Android SDK (API 35 / Build Tools 35) e credencial GitHub com acesso de leitura aos GitHub Packages do Morphe.
+Requisitos: JDK 17, Android SDK (API 35 / Build Tools 35) e credencial GitHub com acesso de leitura aos GitHub Packages do Morphe.
 
 ```bash
 ./gradlew :patches:buildAndroid
