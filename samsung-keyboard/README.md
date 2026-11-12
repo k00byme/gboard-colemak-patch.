@@ -12,28 +12,32 @@ Projeto separado do Gboard Cafe para modificar o Samsung Keyboard.
 | Recurso | Comportamento desejado | Estado |
 |---|---|---|
 | Colar último conteúdo | Botão na barra superior que cola diretamente o clipboard, sem abrir o painel | Pendente de localizar o callback da barra |
-| Acentuação PT-BR | Corrigir apenas acentos ausentes, sem autocorreção ortográfica geral | Hook experimental implementado; build e teste no aparelho pendentes |
+| Acentuação PT-BR | Corrigir apenas acentos ausentes, sem autocorreção ortográfica geral | Patch experimental implementado e empacotado; teste no aparelho pendente |
 | Sugestão principal central | Mover a sugestão mais relevante para o centro da fileira | Pendente de localizar a lista/ordenação visual |
 
 ## Acentuação experimental
 
-O primeiro patch foi criado para a versão exata 5.9.50.10. Ele intercepta o método de commit de texto do wrapper de InputConnection e chama um normalizador conservador no runtime.
+O patch foi criado para a versão exata 5.9.50.10. Ele intercepta o método de commit de texto do wrapper de InputConnection e chama um normalizador conservador no runtime.
 
 O léxico inicial inclui palavras como nao → não, voce → você, tambem → também, cafe → café e facil → fácil. Grafias desconhecidas, como katorze, são preservadas. Formas ambíguas como esta/está, tem/têm, pais/país e e/é ficam inalteradas.
 
-O patch fica **desativado por padrão** até passar pelo build Morphe e por testes funcionais no Galaxy A15. O runtime foi compilado localmente com javac e passou por testes unitários simples usando um wrapper simulado; isso não substitui o teste dentro do teclado.
+O helper foi compilado localmente com javac e passou em testes unitários simples com um wrapper simulado. O bundle Morphe foi compilado com sucesso pelo GitHub Actions (run 43253299894). Isso valida a compilação e o empacotamento, não a aplicação do patch ao APK nem o comportamento no teclado real.
 
-## Build e validação
+O patch permanece desativado por padrão até passar pelo teste funcional no Galaxy A15.
 
-O workflow de GitHub Actions está em:
-.github/workflows/build-samsung-keyboard.yml
+## Build
 
-O workflow deve produzir um arquivo .mpp quando o build terminar com sucesso. Ainda não há confirmação de build concluído nem de funcionamento no aparelho.
+Workflow: .github/workflows/build-samsung-keyboard.yml
 
-O APK original não é armazenado neste repositório.
+Último build confirmado: GitHub Actions run 43253299894 — sucesso.
+Artifact: samsung-keyboard-morphe-patches (patches.mpp).
 
 ## Compatibilidade
 
 A única versão-alvo declarada neste momento é 5.9.50.10. Não assumir que os offsets ou fingerprints de builds Samsung 5.9.40.x funcionam nesta versão.
 
-Cada recurso precisa de fingerprint específico, build .mpp bem-sucedido e validação funcional no Galaxy A15 antes de ser considerado concluído.
+O APK original enviado para análise não é armazenado no repositório.
+
+## Critério de conclusão
+
+Cada recurso precisa ter fingerprint específico, build .mpp bem-sucedido e validação funcional no Galaxy A15 antes de ser considerado concluído.
