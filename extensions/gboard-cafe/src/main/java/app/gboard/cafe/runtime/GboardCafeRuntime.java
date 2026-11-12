@@ -332,18 +332,43 @@ public final class GboardCafeRuntime {
     private static void assignStableIds(ViewGroup root, JSONArray originalRows) {
         try {
             ArrayList<ViewGroup> groups = discoverKeyRows(root);
-            for (int rowIndex = 0; rowIndex < groups.size() && rowIndex < originalRows.length(); rowIndex++) {
+            Set<String> expectedIds = new HashSet<>();
+            for (int row = 0; row < originalRows.length(); row++) {
+                JSONArray values = originalRows.optJSONArray(row);
+                if (values == null) continue;
+                for (int i = 0; i < values.length(); i++) {
+                    expectedIds.add(values.optString(i, ""));
+                }
+            }
+
+            for (int rowIndex = 0;
+                    rowIndex < groups.size() && rowIndex < originalRows.length();
+                    rowIndex++) {
                 JSONArray original = originalRows.optJSONArray(rowIndex);
                 if (original == null) continue;
                 ViewGroup group = groups.get(rowIndex);
                 Map<String, Integer> occurrences = new HashMap<>();
+
                 for (int i = 0; i < group.getChildCount(); i++) {
                     View key = group.getChildAt(i);
-                    if (!isKey(key) || isCustomToken(label(key))) continue;
-                    if (STABLE_KEY_IDS.containsKey(key)) continue;
+                    if (!isKey(key)) continue;
+                    String shownId = label(key);
+                    if (isCustomToken(shownId)) continue;
+
+                    // Count every occurrence, including Views whose stable ID was
+                    // already known. Otherwise a mix of reused/recreated duplicate
+                    // key Views can assign the same occurrence twice.
                     String raw = rawLabel(key);
-                    int occurrence = occurrences.containsKey(raw) ? occurrences.get(raw) : 0;
+                    int occurrence = occurrences.containsKey(raw)
+                            ? occurrences.get(raw) : 0;
                     occurrences.put(raw, occurrence + 1);
+
+                    String currentId = STABLE_KEY_IDS.get(key);
+                    if (!TextUtils.isEmpty(currentId) && expectedIds.contains(currentId)) {
+                        continue;
+                    }
+                    STABLE_KEY_IDS.remove(key);
+
                     for (int j = 0; j < original.length(); j++) {
                         String token = original.optString(j, "");
                         if (getDisplayLabel(token).equals(raw)
@@ -355,8 +380,9 @@ public final class GboardCafeRuntime {
                     }
                 }
             }
+
             // Fallback for a recreated Gboard view whose parent row was rearranged:
-            // only use a global match when the label is unique in the original model.
+            // only use a global match when that label is unique in the baseline.
             Map<String, String> unique = new HashMap<>();
             Set<String> ambiguous = new HashSet<>();
             for (int i = 0; i < originalRows.length(); i++) {
@@ -372,9 +398,12 @@ public final class GboardCafeRuntime {
             for (ViewGroup group : groups) {
                 for (int i = 0; i < group.getChildCount(); i++) {
                     View key = group.getChildAt(i);
-                    if (!isKey(key) || isCustomToken(label(key)) || STABLE_KEY_IDS.containsKey(key)) continue;
-                    String token = unique.get(rawLabel(key));
-                    if (token != null && !ambiguous.contains(rawLabel(key))) {
+                    if (!isKey(key) || isCustomToken(label(key))) continue;
+                    String currentId = STABLE_KEY_IDS.get(key);
+                    if (!TextUtils.isEmpty(currentId) && expectedIds.contains(currentId)) continue;
+                    String raw = rawLabel(key);
+                    String token = unique.get(raw);
+                    if (token != null && !ambiguous.contains(raw)) {
                         STABLE_KEY_IDS.put(key, token);
                     }
                 }
@@ -382,7 +411,7 @@ public final class GboardCafeRuntime {
         } catch (Throwable ignored) {}
     }
 
-    private static InputConnection findInputConnection(Context context) {
+        private static InputConnection findInputConnection(Context context) {
         try {
             Context current = context;
             for (int depth = 0; depth < 12 && current != null; depth++) {
