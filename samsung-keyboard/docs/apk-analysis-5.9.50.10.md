@@ -2,15 +2,14 @@
 
 ## Arquivo analisado
 
-- Arquivo recebido: com.samsung.android.honeyboard_5.9.50.10-595010300_minAPI33(arm64-v8a,armeabi-v7a,x86,x86_64)(nodpi)_apkmirror.com.apk
 - Pacote: com.samsung.android.honeyboard
 - Versão: 5.9.50.10
 - Version code: 595010300
 - SHA-256: c87bfd9ae4bb9e17f527a53aaccd955cbc203083dabe9fc9673134d4adbbfb8e
 - DEXs: classes.dex, classes2.dex, classes3.dex
-- O APK também contém bibliotecas nativas de previsão/transliteração, incluindo XT9 e Transliterate.
+- Bibliotecas nativas de previsão/transliteração: XT9, Transliterate, fluency e outras.
 
-O APK original não é incluído no repositório.
+O APK original não é armazenado no repositório.
 
 ## 1. Botão de colagem instantânea
 
@@ -18,36 +17,41 @@ O APK original não é incluído no repositório.
 - icecone/clipboard/viewmodel/ClipboardViewModel
 - icecone/clipboard/stub/ClipBoardHandler
 - textboard/keyboardbar/view/ClipboardModeLayout
-- Preferências de barra: settings/styleandlayout/keyboardtoolbar/KeyboardToolbarSettingsFragment
+- settings/styleandlayout/keyboardtoolbar/KeyboardToolbarSettingsFragment
 
-Os recursos do APK contêm textos associados a “Edit toolbar”, “Paste”, “Paste copied text”, “Clipboard” e limites de quantidade de ícones. Isso confirma que há uma infraestrutura de barra personalizável, mas ainda não identifica o ponto exato em que os itens são construídos e conectados aos eventos de toque.
+Os recursos incluem rótulos como “Edit toolbar”, “Paste”, “Paste copied text” e “Clipboard”. Isso confirma a existência de componentes de clipboard e configuração da barra, mas não identifica ainda o construtor da lista de itens e o callback de toque usado pela barra superior.
 
-### Implementação pretendida
-Adicionar um item próprio à barra que leia o texto principal disponível no clipboard e o insira no campo ativo pela conexão de entrada do teclado. A ação deve ignorar clipboard vazio e conteúdo não textual, sem abrir o painel de clipboard.
+### Implementação desejada
+Adicionar um item separado do painel Clipboard. Ao tocar, deve inserir diretamente o texto principal disponível na área de transferência no campo ativo, sem abrir o painel.
 
-**Pendente:** identificar a classe que monta a lista de itens da barra e a ponte correta para a InputConnection ativa.
+**Estado: pendente.** Não foi criado um botão falso ou um patch que apenas altere rótulos.
 
 ## 2. Correção apenas de acentuação
 
 ### Estruturas encontradas
 - base/spellcheckerservice/HoneyBoardSpellCheckerService
-- Modelos e componentes de previsão presentes nos DEXs e nas bibliotecas nativas.
-- Recursos incluem opções de “Suggest text corrections”, “Predictive text” e correção gramatical.
+- Lmd/b, wrapper usado pelo teclado para encaminhar operações da InputConnection
+- Lmd/b.commitText(CharSequence, int)
+- Lmd/b.getTextBeforeCursor(int, int)
+- Lmd/b.deleteSurroundingText(int, int)
 
-O serviço de spell checker é um ponto de investigação, mas não se deve reutilizar a correção ortográfica geral: o requisito é estritamente limitado à acentuação.
+A sessão HoneyBoardSpellCheckerService.onGetSuggestions retorna uma SuggestionsInfo vazia. Portanto, não é um ponto funcional para implementar as sugestões pretendidas.
 
-### Regra funcional
-- nao → não
-- voce → você
-- tambem → também
-- cafe → café
-- facil → fácil
-- katorze → permanece katorze
-- esta deve permanecer inalterado quando o contexto não permitir distinguir esta de está.
+### Hook experimental criado
+O método Lmd/b.commitText existe no classes.dex da versão 5.9.50.10 com assinatura commitText(CharSequence, int): boolean. O patch injeta uma chamada para AccentOnlyRuntime.normalizeCommit(Object, CharSequence) no início do método e substitui o parâmetro de texto pelo retorno do helper.
 
-A implementação deverá usar um léxico de formas acentuadas e contexto. Em casos ambíguos, não deve alterar o texto. Não deve substituir erros ortográficos por palavras corretas.
+O helper:
+- atua apenas quando há espaço ou pontuação de encerramento;
+- tenta corrigir apenas palavras presentes num léxico conservador;
+- preserva palavras desconhecidas e capitalização;
+- não modifica formas ambíguas como esta/está, tem/têm, pais/país ou e/é;
+- em caso de erro de reflexão ou incompatibilidade, devolve o texto original.
 
-**Pendente:** encontrar o caminho de entrada de texto que permita aplicar essa regra sem ativar a autocorreção geral do Samsung Keyboard.
+Exemplos iniciais: nao → não, voce → você, tambem → também, cafe → café, facil → fácil. A palavra katorze permanece katorze.
+
+O patch está desativado por padrão. O runtime Java foi compilado localmente e passou em testes com um wrapper simulado. Isso não valida o hook no Samsung Keyboard real.
+
+**Pendente:** confirmar que o fingerprint é aceito pelo Morphe, testar o comportamento com composição do Samsung Keyboard e expandir o léxico sem introduzir falsos positivos.
 
 ## 3. Centralizar a sugestão principal
 
@@ -56,17 +60,16 @@ A implementação deverá usar um léxico de formas acentuadas e contexto. Em ca
 - textboard/candidate/view/CandidateTableLayout
 - textboard/databinding/CandidateViewBindingImpl
 - textboard/databinding/CandidatesRowLayoutBindingImpl
+- CandidateContainerBinding, que mantém candidateScrollHolder (RecyclerView) e candidateMultiLineHolder (FlexboxLayout)
 
-O método CandidateViewModel.getSuggestionIndex(boolean) foi localizado. Na análise de chamadas, a referência direta encontrada até agora parte de getSuggestionNumber(). Portanto, ele aparenta participar da numeração exibida da sugestão; **não está confirmado como o método que determina a posição horizontal dos candidatos**. Não é seguro forçar o retorno para 1 sem rastrear o adaptador/lista e a ordem dos itens.
+CandidateViewModel.getSuggestionIndex(boolean) foi localizado, mas a análise de chamadas mostra que ele é usado por getSuggestionNumber() para apresentar a numeração da sugestão. Não é o método que define a ordem horizontal. Forçá-lo para 1 poderia alterar a numeração sem mudar a posição visual.
 
-A estrutura CandidatesRowLayoutBindingImpl referencia uma área de lista/RecyclerView e é um dos pontos de investigação para encontrar a ordem visual real.
-
-**Pendente:** mapear o adaptador ou a lista que alimenta as três posições, preservando a associação entre texto, dados de seleção e ação ao tocar em cada sugestão.
+**Pendente:** identificar a lista/adaptador real que alimenta as sugestões e reordenar a posição principal sem quebrar a associação entre cada palavra e sua ação ao toque.
 
 ## Compatibilidade e validação
 
-Há projetos Morphe públicos com patches para versões anteriores do Samsung Keyboard 5.9.40.x. A versão deste APK é 5.9.50.10 e não deve ser tratada como compatível por aproximação. Fingerprints e offsets precisam ser confirmados na versão-alvo.
+Há patches públicos Morphe para builds anteriores 5.9.40.x, mas não há compatibilidade presumida com 5.9.50.10. Este projeto usa um fingerprint específico para o APK enviado.
 
 ## Estado desta análise
 
-Esta é uma análise estrutural inicial, não uma decompilação completa nem uma implementação dos recursos. Nenhum patch funcional foi gerado ou testado no aparelho nesta etapa. O próximo passo técnico é fechar os três pontos de entrada e, então, escrever os patches específicos para esta versão.
+O projeto Morphe isolado foi criado na branch samsung-keyboard. Um hook experimental para acentuação foi escrito e o runtime passou em testes locais simples. O build GitHub Actions foi iniciado; o resultado ainda precisa ser conferido. O recurso de colagem e o reposicionamento de sugestões continuam em investigação. Nenhuma das três funções foi validada no Galaxy A15 nesta etapa.
