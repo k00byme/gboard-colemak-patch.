@@ -1,60 +1,47 @@
 # Reverse engineering notes
 
-## Input builds
+Target APKs supplied for this project:
 
-- Gboard XAPK: `gboard-18-5-4-993608717-release-arm64-v8a.xapk`
-- Keys Cafe APK: `samsung-keys-cafe-1-8-00-13.apk`
+- Gboard XAPK: `18.5.4.993608717-release-arm64-v8a`
+- Samsung Keys Cafe APK: `1.8.00.13`
 
-The uploaded APKs are analysis inputs only and are not committed to this repository.
+## Gboard findings
 
-## Gboard areas identified during the initial inspection
+The XAPK contains the base Gboard APK plus six configuration/feature splits. The base APK contains four DEX files and obfuscated resource XML names.
 
-The initial inspection identified candidate components/names that need to be revalidated against the exact DEX and resource tables before writing hooks:
+Confirmed resource and code surfaces in the supplied build:
 
-- `SoftKeyView`: candidate key-view rendering surface.
-- `KeyboardView`: candidate keyboard container/view.
-- `KeyboardDef`: candidate layout definition.
-- `ThemeBuilderActivity` and `ThemeEditorActivity`: candidate theme configuration surfaces.
+- `res/PWn.xml` contains Gboard's soft-key layout schema: `softkeys`, `softkey_list`, `softkey`, `press_data`, `long_press_data`, `template_id`.
+- `res/VvI.xml` also contains the soft-key list schema and is a concrete keyboard-definition resource.
+- `res/iXt.xml` contains keyboard variant metadata, including `keyboard_group`, `variant`, `variant_label`, and `force_show_number_row`.
+- DEX class names include:
+  - `com.google.android.libraries.inputmethod.widgets.SoftKeyView`
+  - `com.google.android.libraries.inputmethod.widgets.SoftKeyboardView`
+  - `com.google.android.libraries.inputmethod.keyboard.impl.SoftKeyViewsMapper`
+  - `com.google.android.libraries.inputmethod.metadata.KeyboardDefManager`
+  - `com.google.android.libraries.inputmethod.metadata.KeyboardDef`
+  - `com.google.android.libraries.inputmethod.metadata.KeyboardViewDef`
+  - `com.google.android.apps.inputmethod.libs.theme.builder.ThemeBuilderActivity`
+  - `com.google.android.apps.inputmethod.libs.theme.builder.ThemeEditorActivity`
+- DEX strings confirm `SoftKeyView.setSoftKeyDef`, `SoftKeyView.onMeasure`, `SoftKeyViewsMapper.initSoftKeyViews`, `SoftKeyViewsMapper.updateSoftKeyViews`, and `KeyboardDefManager.loadKeyboardDefFromXml`.
 
-These names are reconnaissance notes, not stable public APIs. Before any patch uses them, record the defining DEX descriptor, methods, field types, call sites, and a reproducible fingerprint.
+These findings establish that Gboard has a structured key-definition layer and a separate view-mapping layer. They do not yet establish exact method prototypes or safe injection points. Those must be fingerprinted against the supplied DEX before adding bytecode hooks.
 
-## Keys Cafe areas identified during the initial inspection
+## Keys Cafe findings
 
-The APK contains feature areas/classes associated with:
+The supplied Keys Cafe DEX contains Samsung-specific HoneyTea classes and abstractions, including:
 
-- HoneyTea: visual effects, colors, sounds and animations.
-- Latte: keyboard layout editing and key dimensions.
-- BubbleTea: themes.
-- OreoShake: gesture customization.
-- Statistics and Roaster: secondary features.
+- `HoneyTeaKeyViewModel`, `HoneyTeaKeyboardViewModel`, and `HoneyTeaTouchInfo`
+- `IEffector`
+- `EffectAlpha`, `BlobSpreadAlpha`, and `PaintGunAlpha`
+- `HoneyTeaKeyView` and `HoneyTeaKeyboardViewHolder`
 
-Effect-related identifiers observed in the initial inspection include:
+This supports the decision to recreate the visual behavior rather than transplant the Samsung classes. Keys Cafe is coupled to Honeyboard plugin interfaces and Samsung package namespaces; its implementation is not a drop-in Gboard library.
 
-- `KeySpark`
-- `KeyBlob`
-- `KeyBlobSpread`
-- `KeyColorFlash`
-- `KeyFootPrint`
-- `KeyOutline`
-- `BoardFireCracker`
-- `BoardPaintGun`
-- `BoardRingSpread`
-- `BoardSparkSpin`
-- `KeyBounce`
+## Implementation boundary
 
-These identifiers are a discovery list only. Their original implementations must not be copied blindly: determine their inputs, drawing lifecycle, asset dependencies, and Samsung framework calls first.
-
-## Platform coupling
-
-The first manifest inspection found Samsung-specific identity/integration requirements, including the `android.uid.honeyboard` shared UID and Honeyboard-facing services/permissions. That is a strong sign that direct APK-to-APK class transplantation is not a viable general strategy.
-
-The implementation should reproduce behavior on Gboard's own rendering and settings architecture. Do not add Samsung shared-UID declarations or depend on Samsung-private services.
-
-## Required next inspection
-
-1. Extract all XAPK splits and record package/version/ABI for each.
-2. Decompile the exact Gboard and Keys Cafe builds.
-3. For each prioritized Keys Cafe effect, trace constructor/configuration, drawing/update methods, resources and service dependencies.
-4. Trace Gboard key touch, press/release, invalidation and draw paths.
-5. Trace Gboard settings navigation and preference fragment registration.
-6. Build a mapping table from each Keys Cafe effect to a Gboard hook or a documented reason it must be recreated.
+1. Implement visual effects as original Gboard-side drawing/animation code, driven by key touch state. Do not copy Samsung bytecode or assets.
+2. Implement layout editing by storing a user layout model and applying it to Gboard's key-definition pipeline. Preserve the original layout as the reset/fallback state.
+3. Add the editor entry point only after the target settings/activity flow is fingerprinted. Do not guess an Activity or preference resource.
+4. Every bytecode hook must have a version-specific fingerprint and a strict match-count assertion. A patch must fail closed if the target changes.
+5. The current discovery patch is an analysis patch, not a user-facing feature patch.
