@@ -3,6 +3,7 @@ package app.gboard.cafe
 import app.morphe.patcher.Fingerprint
 import app.morphe.patcher.patch.AppTarget
 import app.morphe.patcher.patch.Compatibility
+import app.morphe.patcher.patch.document
 import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.patch.resourcePatch
 import com.android.tools.smali.dexlib2.Opcode
