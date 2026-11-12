@@ -53,6 +53,9 @@ public final class GboardCafeRuntime {
     private static volatile long keyTouchEvents;
     private static volatile long boardTouchEvents;
     private static volatile long layoutCallbacks;
+    private static volatile String lastLayoutStatus = "Aguardando o primeiro layout do teclado";
+    private static volatile int lastAppliedKeyCount;
+    private static volatile int lastAppliedRowCount;
 
     private GboardCafeRuntime() {}
 
