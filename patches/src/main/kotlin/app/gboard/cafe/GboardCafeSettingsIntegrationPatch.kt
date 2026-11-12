@@ -76,7 +76,6 @@ val gboardCafeSettingsIntegrationPatch = resourcePatch(
                 "app.gboard.cafe.runtime.GboardCafeSettingsActivity"
             )
             item.appendChild(intent)
-            }
         }
     }
 }

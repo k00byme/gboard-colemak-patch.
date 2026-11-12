@@ -73,7 +73,6 @@ val gboardCafeDiagnosticsPatch = resourcePatch(
                 "app.gboard.cafe.runtime.GboardCafeDiagnosticsActivity"
             )
             item.appendChild(intent)
-            }
         }
     }
 }
