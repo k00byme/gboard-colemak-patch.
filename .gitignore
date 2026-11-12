@@ -1,8 +1,10 @@
+*.iml
 .gradle/
+build/
 **/build/
-.idea/
-.vscode/
-*.apk
-*.class
-*.mpp
 local.properties
+*.apk
+*.xapk
+*.dex
+*.mpp
+.idea/

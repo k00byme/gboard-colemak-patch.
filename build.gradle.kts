@@ -1,1 +1,1 @@
-// A configuração do plugin Morphe é declarada em settings.gradle.kts.
+// Configuração do plugin Morphe declarada em settings.gradle.kts.

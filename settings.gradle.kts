@@ -1,4 +1,4 @@
-rootProject.name = "gboard-colemak-patch"
+rootProject.name = "gboard-cafe"
 
 pluginManagement {
     repositories {
