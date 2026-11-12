@@ -263,7 +263,7 @@ public final class GboardCafeRuntime {
             String encoded = Base64.encodeToString(
                     value.getBytes(StandardCharsets.UTF_8),
                     Base64.NO_WRAP | Base64.URL_SAFE);
-            return CUSTOM_KEY_PREFIX + encoded;
+            return CUSTOM_KEY_PREFIX + java.util.UUID.randomUUID().toString() + ":" + encoded;
         } catch (Throwable ignored) {
             return null;
         }
@@ -273,18 +273,21 @@ public final class GboardCafeRuntime {
         if (TextUtils.isEmpty(token)) return "";
         if (token.startsWith(CUSTOM_KEY_PREFIX)) {
             try {
-                byte[] decoded = Base64.decode(
-                        token.substring(CUSTOM_KEY_PREFIX.length()),
-                        Base64.NO_WRAP | Base64.URL_SAFE);
+                int separator = token.indexOf(':', CUSTOM_KEY_PREFIX.length());
+                String encoded = separator < 0
+                        ? token.substring(CUSTOM_KEY_PREFIX.length())
+                        : token.substring(separator + 1);
+                byte[] decoded = Base64.decode(encoded, Base64.NO_WRAP | Base64.URL_SAFE);
                 return new String(decoded, StandardCharsets.UTF_8);
             } catch (Throwable ignored) { return "?"; }
         }
         if (token.startsWith(KEY_ID_PREFIX)) {
-            int separator = token.indexOf(':', KEY_ID_PREFIX.length());
-            if (separator >= 0) {
+            int rowSeparator = token.indexOf(':', KEY_ID_PREFIX.length());
+            int occurrenceSeparator = rowSeparator < 0 ? -1 : token.indexOf(':', rowSeparator + 1);
+            if (occurrenceSeparator >= 0) {
                 try {
                     byte[] decoded = Base64.decode(
-                            token.substring(separator + 1),
+                            token.substring(occurrenceSeparator + 1),
                             Base64.NO_WRAP | Base64.URL_SAFE);
                     return new String(decoded, StandardCharsets.UTF_8);
                 } catch (Throwable ignored) {}
@@ -293,11 +296,23 @@ public final class GboardCafeRuntime {
         return token;
     }
 
-    private static String makeStableKeyId(int originalRow, String originalLabel) {
+    private static String makeStableKeyId(
+            int originalRow, int occurrence, String originalLabel) {
         String encoded = Base64.encodeToString(
                 originalLabel.getBytes(StandardCharsets.UTF_8),
                 Base64.NO_WRAP | Base64.URL_SAFE);
-        return KEY_ID_PREFIX + originalRow + ":" + encoded;
+        return KEY_ID_PREFIX + originalRow + ":" + occurrence + ":" + encoded;
+    }
+
+    private static int stableOccurrenceIndex(String token) {
+        if (TextUtils.isEmpty(token) || !token.startsWith(KEY_ID_PREFIX)) return -1;
+        try {
+            int rowStart = KEY_ID_PREFIX.length();
+            int rowEnd = token.indexOf(':', rowStart);
+            int occurrenceEnd = rowEnd < 0 ? -1 : token.indexOf(':', rowEnd + 1);
+            if (occurrenceEnd < 0) return -1;
+            return Integer.parseInt(token.substring(rowEnd + 1, occurrenceEnd));
+        } catch (Throwable ignored) { return -1; }
     }
 
     private static int stableRowIndex(String token) {
@@ -321,14 +336,19 @@ public final class GboardCafeRuntime {
                 JSONArray original = originalRows.optJSONArray(rowIndex);
                 if (original == null) continue;
                 ViewGroup group = groups.get(rowIndex);
+                Map<String, Integer> occurrences = new HashMap<>();
                 for (int i = 0; i < group.getChildCount(); i++) {
                     View key = group.getChildAt(i);
                     if (!isKey(key) || isCustomToken(label(key))) continue;
                     if (STABLE_KEY_IDS.containsKey(key)) continue;
                     String raw = rawLabel(key);
+                    int occurrence = occurrences.containsKey(raw) ? occurrences.get(raw) : 0;
+                    occurrences.put(raw, occurrence + 1);
                     for (int j = 0; j < original.length(); j++) {
                         String token = original.optString(j, "");
-                        if (getDisplayLabel(token).equals(raw) && stableRowIndex(token) == rowIndex) {
+                        if (getDisplayLabel(token).equals(raw)
+                                && stableRowIndex(token) == rowIndex
+                                && stableOccurrenceIndex(token) == occurrence) {
                             STABLE_KEY_IDS.put(key, token);
                             break;
                         }
@@ -413,12 +433,16 @@ public final class GboardCafeRuntime {
         for (int rowIndex = 0; rowIndex < groups.size(); rowIndex++) {
             ViewGroup group = groups.get(rowIndex);
             JSONArray row = new JSONArray();
+            Map<String, Integer> occurrences = new HashMap<>();
             for (int i = 0; i < group.getChildCount(); i++) {
                 View key = group.getChildAt(i);
                 if (!isKey(key) || key.getVisibility() != View.VISIBLE) continue;
                 String id = label(key);
                 if (!isCustomToken(id) && !id.startsWith(KEY_ID_PREFIX)) {
-                    id = makeStableKeyId(rowIndex, rawLabel(key));
+                    String raw = rawLabel(key);
+                    int occurrence = occurrences.containsKey(raw) ? occurrences.get(raw) : 0;
+                    occurrences.put(raw, occurrence + 1);
+                    id = makeStableKeyId(rowIndex, occurrence, raw);
                     STABLE_KEY_IDS.put(key, id);
                 }
                 row.put(id);
@@ -528,9 +552,13 @@ public final class GboardCafeRuntime {
             for (int rowIndex = 0; rowIndex < original.length(); rowIndex++) {
                 JSONArray oldRow = original.optJSONArray(rowIndex);
                 JSONArray newRow = new JSONArray();
+                Map<String, Integer> occurrences = new HashMap<>();
                 if (oldRow != null) {
                     for (int i = 0; i < oldRow.length(); i++) {
-                        newRow.put(makeStableKeyId(rowIndex, oldRow.optString(i, "")));
+                        String raw = oldRow.optString(i, "");
+                        int occurrence = occurrences.containsKey(raw) ? occurrences.get(raw) : 0;
+                        occurrences.put(raw, occurrence + 1);
+                        newRow.put(makeStableKeyId(rowIndex, occurrence, raw));
                     }
                 }
                 stableOriginal.put(newRow);
