@@ -587,6 +587,42 @@ public final class GboardCafeRuntime {
         return total >= 20;
     }
 
+    private static boolean matchesOriginalKeySet(ViewGroup root, JSONArray original) {
+        try {
+            if (original == null || original.length() == 0) return false;
+            ArrayList<ViewGroup> groups = discoverKeyRows(root);
+            if (groups.size() != original.length()) return false;
+            assignStableIds(root, original);
+
+            Set<String> expected = new HashSet<>();
+            for (int rowIndex = 0; rowIndex < original.length(); rowIndex++) {
+                JSONArray row = original.optJSONArray(rowIndex);
+                if (row == null) return false;
+                for (int i = 0; i < row.length(); i++) {
+                    String id = row.optString(i, "");
+                    if (TextUtils.isEmpty(id) || !id.startsWith(KEY_ID_PREFIX)
+                            || !expected.add(id)) return false;
+                }
+            }
+
+            Set<String> actual = new HashSet<>();
+            for (ViewGroup group : groups) {
+                for (int i = 0; i < group.getChildCount(); i++) {
+                    View key = group.getChildAt(i);
+                    if (!isKey(key) || isCustomToken(label(key))) continue;
+                    String id = label(key);
+                    // Unknown/unmatched keys mean this is another Gboard page or
+                    // a changed layout. Never apply a saved QWERTY arrangement there.
+                    if (TextUtils.isEmpty(id) || !id.startsWith(KEY_ID_PREFIX)
+                            || !actual.add(id)) return false;
+                }
+            }
+            return expected.equals(actual);
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
     private static boolean hasCustomization(SharedPreferences p) {
         try {
             String original = p.getString("gboard_cafe_original_rows", null);
@@ -624,8 +660,7 @@ public final class GboardCafeRuntime {
             JSONArray original = parseRows(p.getString("gboard_cafe_original_rows", null));
             JSONArray desired = parseRows(p.getString("gboard_cafe_custom_rows", null));
             if (desired == null) desired = original;
-            if (desired == null) return false;
-            assignStableIds(root, original == null ? desired : original);
+            if (desired == null || !matchesOriginalKeySet(root, original)) return false;
             JSONArray current = captureRows(root);
             if (current.length() != desired.length()) return true;
             for (int i = 0; i < desired.length(); i++) {
@@ -648,7 +683,7 @@ public final class GboardCafeRuntime {
             assignStableIds(root, original == null ? desired : original);
 
             ArrayList<ViewGroup> groups = discoverKeyRows(root);
-            if (groups.size() != desired.length()) return;
+            if (groups.size() != desired.length() || !matchesOriginalKeySet(root, original)) return;
 
             Map<String, View> views = new HashMap<>();
             Map<String, ViewGroup> originalParents = new HashMap<>();
