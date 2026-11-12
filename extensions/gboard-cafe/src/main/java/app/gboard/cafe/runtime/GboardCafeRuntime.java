@@ -149,8 +149,8 @@ public final class GboardCafeRuntime {
     }
 
     /**
-     * Called after Gboard lays out the keyboard. Saved changes are applied on the
-     * next UI-queue turn, never while Gboard is executing its own onLayout method.
+     * Called after Gboard lays out the keyboard. Capture the original text layout
+     * once, then reapply the saved arrangement on the next UI-queue turn.
      */
     public static void afterLayout(View keyboard) {
         try {
@@ -166,121 +166,12 @@ public final class GboardCafeRuntime {
                     p.edit().putString("gboard_cafe_original_rows", encoded)
                             .putString("gboard_cafe_custom_rows", encoded).apply();
                 }
-            } else if (hasCustomization(p)) {
-                scheduleApply(keyboard);
+            } else {
+                migrateLegacyLayout(p, (ViewGroup) keyboard);
+                JSONArray baseline = parseRows(p.getString("gboard_cafe_original_rows", null));
+                if (baseline != null) assignStableIds((ViewGroup) keyboard, baseline);
+                if (hasCustomization(p)) scheduleApply(keyboard);
             }
-        } catch (Throwable ignored) {}
-    }
-
-    private static boolean isPrimaryLayout(JSONArray rows) {
-        if (rows == null || rows.length() < 3) return false;
-        int total = 0;
-        for (int i = 0; i < rows.length(); i++) {
-            JSONArray row = rows.optJSONArray(i);
-            if (row == null || row.length() < 2) return false;
-            total += row.length();
-        }
-        return total >= 20;
-    }
-
-    private static boolean hasCustomization(SharedPreferences p) {
-        try {
-            String original = p.getString("gboard_cafe_original_rows", null);
-            String custom = p.getString("gboard_cafe_custom_rows", null);
-            Set<String> hidden = p.getStringSet("gboard_cafe_hidden_keys", Collections.<String>emptySet());
-            return (original != null && custom != null && !original.equals(custom))
-                    || (hidden != null && !hidden.isEmpty());
-        } catch (Throwable ignored) { return false; }
-    }
-
-    private static void scheduleApply(final View keyboard) {
-        try {
-            if (keyboard == null || PENDING_LAYOUT.containsKey(keyboard)) return;
-            PENDING_LAYOUT.put(keyboard, Boolean.TRUE);
-            keyboard.post(() -> {
-                PENDING_LAYOUT.remove(keyboard);
-                try {
-                    if (keyboard instanceof ViewGroup && layoutNeedsApply((ViewGroup) keyboard)) {
-                        applySavedLayout((ViewGroup) keyboard);
-                        keyboard.requestLayout();
-                        keyboard.invalidate();
-                    }
-                } catch (Throwable ignored) {}
-            });
-        } catch (Throwable ignored) {}
-    }
-
-    private static boolean layoutNeedsApply(ViewGroup root) {
-        try {
-            SharedPreferences p = prefs(root.getContext());
-            JSONArray desired = parseRows(p.getString("gboard_cafe_custom_rows", null));
-            if (desired == null) return false;
-            JSONArray current = captureRows(root);
-            if (current.length() != desired.length()) return true;
-            for (int i = 0; i < desired.length(); i++) {
-                JSONArray want = desired.optJSONArray(i);
-                JSONArray have = current.optJSONArray(i);
-                if (want == null || have == null || !want.toString().equals(have.toString())) return true;
-            }
-            Set<String> hidden = p.getStringSet("gboard_cafe_hidden_keys", Collections.<String>emptySet());
-            return hasVisibilityMismatch(root, hidden == null ? Collections.<String>emptySet() : hidden);
-        } catch (Throwable ignored) { return false; }
-    }
-
-    private static boolean hasVisibilityMismatch(ViewGroup group, Set<String> hidden) {
-        try {
-            for (int i = 0; i < group.getChildCount(); i++) {
-                View child = group.getChildAt(i);
-                if (isKey(child)) {
-                    int expected = hidden.contains(label(child)) ? View.GONE : View.VISIBLE;
-                    if (child.getVisibility() != expected) return true;
-                } else if (child instanceof ViewGroup &&
-                        hasVisibilityMismatch((ViewGroup) child, hidden)) {
-                    return true;
-                }
-            }
-        } catch (Throwable ignored) {}
-        return false;
-    }
-
-    public static String[][] getRows(Context context) {
-        try {
-            SharedPreferences p = prefs(context);
-            JSONArray data = parseRows(p.getString("gboard_cafe_custom_rows", null));
-            if (data == null) data = parseRows(p.getString("gboard_cafe_original_rows", null));
-            if (data == null) return new String[0][];
-
-            String[][] result = new String[data.length()][];
-            for (int i = 0; i < data.length(); i++) {
-                JSONArray row = data.optJSONArray(i);
-                if (row == null || row.length() == 0) return new String[0][];
-                result[i] = new String[row.length()];
-                for (int j = 0; j < row.length(); j++) {
-                    result[i][j] = row.optString(j, "");
-                    if (TextUtils.isEmpty(result[i][j])) return new String[0][];
-                }
-            }
-            return result;
-        } catch (Throwable ignored) {
-            return new String[0][];
-        }
-    }
-
-    public static void setRows(Context context, String[][] rows) {
-        try {
-            if (rows == null || rows.length == 0) return;
-            JSONArray outer = new JSONArray();
-            for (String[] row : rows) {
-                if (row == null || row.length == 0) return;
-                JSONArray inner = new JSONArray();
-                for (String key : row) {
-                    if (TextUtils.isEmpty(key)) return;
-                    inner.put(key);
-                }
-                outer.put(inner);
-            }
-            prefs(context).edit().putString("gboard_cafe_custom_rows", outer.toString()).apply();
-            refreshKeyboard();
         } catch (Throwable ignored) {}
     }
 
@@ -314,13 +205,6 @@ public final class GboardCafeRuntime {
             else editor.putString("gboard_cafe_custom_rows", original);
             editor.apply();
             refreshKeyboard();
-        } catch (Throwable ignored) {}
-    }
-
-    private static void refreshKeyboard() {
-        try {
-            final View view = lastKeyboard.get();
-            if (view != null) scheduleApply(view);
         } catch (Throwable ignored) {}
     }
 
