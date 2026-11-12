@@ -13,7 +13,3 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 }
-
-dependencies {
-    compileOnly("androidx.preference:preference:1.2.1")
-}
