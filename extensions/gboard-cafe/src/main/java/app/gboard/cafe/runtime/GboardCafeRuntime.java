@@ -96,6 +96,36 @@ public final class GboardCafeRuntime {
         }
     }
 
+    /**
+     * Layout fallback called from SoftKeyboardView.dispatchTouchEvent.
+     * The editor must not depend only on onLayout: Gboard can reuse an already
+     * measured keyboard view when the IME becomes active again.
+     */
+    public static void onKeyboardTouch(View keyboard, MotionEvent event) {
+        try {
+            if (keyboard == null || event == null) return;
+            int action = event.getActionMasked();
+            if (action != MotionEvent.ACTION_DOWN
+                    && action != MotionEvent.ACTION_POINTER_DOWN) return;
+
+            lastKeyboard = new WeakReference<>(keyboard);
+            SharedPreferences p = prefs(keyboard.getContext());
+            if (!hasCustomization(p)) {
+                lastLayoutStatus = "Nenhuma personalização de layout salva";
+                return;
+            }
+
+            // The current root is now known to be active. Reapply after the
+            // current dispatch completes so Gboard can finish processing its touch.
+            PENDING_LAYOUT.remove(keyboard);
+            scheduleApply(keyboard);
+        } catch (Throwable error) {
+            lastLayoutStatus = "Hook de toque/layout falhou: "
+                    + error.getClass().getSimpleName() + ": " + error.getMessage();
+            android.util.Log.e("GboardCafe", lastLayoutStatus, error);
+        }
+    }
+
     /** Injected at the start of SoftKeyboardView.dispatchTouchEvent(MotionEvent). */
     public static void onBoardTouch(View keyboard, MotionEvent event) {
         try {
@@ -367,9 +397,15 @@ public final class GboardCafeRuntime {
                     occurrences.put(raw, occurrence + 1);
 
                     String currentId = STABLE_KEY_IDS.get(key);
-                    if (!TextUtils.isEmpty(currentId) && expectedIds.contains(currentId)) {
+                    if (!TextUtils.isEmpty(currentId)
+                            && expectedIds.contains(currentId)
+                            && getDisplayLabel(currentId).equals(raw)
+                            && stableRowIndex(currentId) == rowIndex
+                            && stableOccurrenceIndex(currentId) == occurrence) {
                         continue;
                     }
+                    // A View can be recycled for a different SoftKeyDef. Never
+                    // trust its WeakHashMap ID without confirming the current label.
                     STABLE_KEY_IDS.remove(key);
 
                     for (int j = 0; j < original.length(); j++) {
@@ -979,6 +1015,8 @@ public final class GboardCafeRuntime {
             report.append("Last layout status: ").append(lastLayoutStatus).append('\n');
             report.append("Last applied keys: ").append(lastAppliedKeyCount).append('\n');
             report.append("Last applied rows: ").append(lastAppliedRowCount).append('\n');
+            report.append("Root: ").append(lastKeyboard.get() == null
+                    ? "nenhum teclado ativo" : lastKeyboard.get().getClass().getName()).append('\n');
             try {
                 android.content.pm.PackageInfo info = context.getPackageManager()
                         .getPackageInfo(context.getPackageName(), 0);

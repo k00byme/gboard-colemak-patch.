@@ -34,5 +34,18 @@ val gboardCafeKeyLayoutEditorPatch = bytecodePatch(
                 "invoke-static {p0}, Lapp/gboard/cafe/runtime/GboardCafeRuntime;->afterLayout(Landroid/view/View;)V",
             )
         }
+
+        // Fallback lifecycle hook: this method is already used by the working
+        // Board Effects patch, so it also catches a keyboard reused without layout.
+        val keyboardTouch = Fingerprint(
+            definingClass = "Lcom/google/android/libraries/inputmethod/widgets/SoftKeyboardView;",
+            name = "dispatchTouchEvent",
+            returnType = "Z",
+            parameters = listOf("Landroid/view/MotionEvent;"),
+        )
+        keyboardTouch.method.addInstructions(
+            0,
+            "invoke-static {p0, p1}, Lapp/gboard/cafe/runtime/GboardCafeRuntime;->onKeyboardTouch(Landroid/view/View;Landroid/view/MotionEvent;)V",
+        )
     }
 }
