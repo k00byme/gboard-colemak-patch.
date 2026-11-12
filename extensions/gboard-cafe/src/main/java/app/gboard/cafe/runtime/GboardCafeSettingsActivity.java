@@ -337,8 +337,8 @@ public final class GboardCafeSettingsActivity extends Activity {
 
     private String normalizeColor(String value) {
         try {
-            Color.parseColor(value);
-            return value;
+            int parsed = Color.parseColor(value);
+            return String.format("#%06X", parsed & 0xFFFFFF);
         } catch (Throwable ignored) {
             return "#CFB08E";
         }
@@ -365,9 +365,12 @@ public final class GboardCafeSettingsActivity extends Activity {
                 .putBoolean("gboard_cafe_enabled", enabled.isChecked())
                 .putString("gboard_cafe_effect", EFFECT_VALUES[keyIndex])
                 .putString("gboard_cafe_board_effect", BOARD_EFFECT_VALUES[boardIndex])
-                .putString("gboard_cafe_color", String.format("#%08X", parsed))
+                .putString("gboard_cafe_color", String.format("#%06X", parsed & 0xFFFFFF))
                 .putInt("gboard_cafe_duration", 520)
                 .apply();
+        selectedColor = String.format("#%06X", parsed & 0xFFFFFF);
+        customColor.setText(selectedColor);
+        rebuildPalette();
         GboardCafeRuntime.clearActiveEffects();
         Toast.makeText(this, "Efeitos salvos", Toast.LENGTH_SHORT).show();
     }

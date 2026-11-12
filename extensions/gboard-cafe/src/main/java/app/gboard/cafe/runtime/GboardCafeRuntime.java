@@ -742,7 +742,10 @@ public final class GboardCafeRuntime {
                     key.setLayoutParams(lp);
                 }
             }
-            if (total > 0f) ((LinearLayout) group).setWeightSum(total);
+            // A zero weight sum lets LinearLayout recalculate from visible children.
+            // Keeping the previous explicit sum after deleting every key would leave
+            // invisible weight reserved and create a blank strip in the row.
+            ((LinearLayout) group).setWeightSum(total);
             group.requestLayout();
         } catch (Throwable ignored) {}
     }
