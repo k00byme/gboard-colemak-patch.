@@ -37,6 +37,9 @@ public final class GboardCafeRuntime {
     private static final WeakHashMap<View, BoardEffectDrawable> BOARD_EFFECTS = new WeakHashMap<>();
     private static final WeakHashMap<View, Boolean> PENDING_LAYOUT = new WeakHashMap<>();
     private static WeakReference<View> lastKeyboard = new WeakReference<>(null);
+    private static volatile long keyTouchEvents;
+    private static volatile long boardTouchEvents;
+    private static volatile long layoutCallbacks;
 
     private GboardCafeRuntime() {}
 
@@ -53,6 +56,7 @@ public final class GboardCafeRuntime {
     public static void onTouch(View key, MotionEvent event) {
         try {
             if (key == null || event == null) return;
+            keyTouchEvents++;
             SharedPreferences p = prefs(key.getContext());
             if (!p.getBoolean("gboard_cafe_enabled", false)) return;
 
@@ -97,6 +101,7 @@ public final class GboardCafeRuntime {
     public static void onBoardTouch(View keyboard, MotionEvent event) {
         try {
             if (keyboard == null || event == null) return;
+            boardTouchEvents++;
             SharedPreferences p = prefs(keyboard.getContext());
             if (!p.getBoolean("gboard_cafe_enabled", false)) return;
             String effect = p.getString("gboard_cafe_board_effect", "none");
@@ -142,6 +147,7 @@ public final class GboardCafeRuntime {
     public static void afterLayout(View keyboard) {
         try {
             if (!(keyboard instanceof ViewGroup)) return;
+            layoutCallbacks++;
             lastKeyboard = new WeakReference<>(keyboard);
             SharedPreferences p = prefs(keyboard.getContext());
             String original = p.getString("gboard_cafe_original_rows", null);
@@ -455,6 +461,49 @@ public final class GboardCafeRuntime {
                 }
             }
         } catch (Throwable ignored) {}
+    }
+
+
+    /** Snapshot used by the optional Diagnostics patch. */
+    public static String getDiagnostics(Context context) {
+        try {
+            SharedPreferences p = prefs(context);
+            String[][] rows = getRows(context);
+            int rowCount = rows == null ? 0 : rows.length;
+            int keyCount = 0;
+            if (rows != null) {
+                for (String[] row : rows) if (row != null) keyCount += row.length;
+            }
+            String[] hidden = getHiddenKeys(context);
+            StringBuilder report = new StringBuilder();
+            report.append("Gboard Cafe diagnostics\\n\\n");
+            report.append("Package: ").append(context.getPackageName()).append('\\n');
+            report.append("Key effects enabled: ")
+                    .append(p.getBoolean("gboard_cafe_enabled", false)).append('\\n');
+            report.append("Key effect: ")
+                    .append(p.getString("gboard_cafe_effect", "ripple")).append('\\n');
+            report.append("Board effect: ")
+                    .append(p.getString("gboard_cafe_board_effect", "none")).append('\\n');
+            report.append("Color: ")
+                    .append(p.getString("gboard_cafe_color", "#CFB08E")).append('\\n');
+            report.append("Duration: ")
+                    .append(p.getInt("gboard_cafe_duration", 260)).append(" ms\\n");
+            report.append("Captured rows: ").append(rowCount).append('\\n');
+            report.append("Captured keys: ").append(keyCount).append('\\n');
+            report.append("Hidden keys: ").append(hidden == null ? 0 : hidden.length).append('\\n');
+            report.append("Key touch hooks: ").append(keyTouchEvents).append('\\n');
+            report.append("Board touch hooks: ").append(boardTouchEvents).append('\\n');
+            report.append("Layout callbacks: ").append(layoutCallbacks).append('\\n');
+            try {
+                android.content.pm.PackageInfo info = context.getPackageManager()
+                        .getPackageInfo(context.getPackageName(), 0);
+                report.append("App version: ").append(info.versionName).append('\\n');
+            } catch (Throwable ignored) {}
+            return report.toString();
+        } catch (Throwable error) {
+            return "Gboard Cafe diagnostics unavailable: "
+                    + error.getClass().getName() + ": " + error.getMessage();
+        }
     }
 
     private static int clamp(int value, int minimum, int maximum) {

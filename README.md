@@ -1,68 +1,55 @@
 # Gboard Cafe
 
-Pacote de patches Morphe que recria no Gboard recursos visuais e de edição de teclas inspirados no Samsung Keys Cafe.
+Projeto de patches Morphe para recriar no Gboard recursos visuais e de edição inspirados no Samsung Keys Cafe.
 
-## Prioridades
+## Patches no único bundle .mpp
 
-1. Efeitos visuais por tecla e efeitos sobre a área inteira do teclado.
-2. Reorganização das teclas existentes.
-3. Entrada e controles dentro das configurações do próprio Gboard.
+1. **Gboard Cafe Core** — insere o runtime e as Activities do projeto.
+2. **Settings Integration** — adiciona Gboard Cafe às configurações do Gboard.
+3. **Key Effects** — efeitos na tecla pressionada.
+4. **Board Effects** — efeitos sobre a área inteira do teclado.
+5. **Key Layout Editor** — captura e reordena as teclas existentes dentro da linha, com ocultar/restaurar.
+6. **Diagnostics** — página opcional de diagnóstico acessível nas configurações do Gboard.
+7. **Gboard structure discovery** — patch opcional de inspeção, desativado por padrão.
 
-Os demais recursos do Keys Cafe ficam fora do escopo inicial.
+Os recursos ficam em patches selecionáveis separados, mas são compilados juntos no mesmo arquivo `.mpp`. Os patches de recurso dependem apenas do Core e da integração de configurações que precisam para funcionar.
 
-## Estado da implementação
+## Correção crítica — colisão de classes
 
-O projeto contém:
+O crash anterior foi identificado a partir do stack trace e da comparação de DEX:
 
-- Efeitos originais desenhados em runtime na camada visual das teclas: ripple, flash de cor, contorno, bounce, partículas, tinta, blob, blob expansivo e pegadas.
-- Efeitos originais na camada visual do teclado: anéis, faíscas, faíscas giratórias, fogos, blob, blob expansivo, onda de contorno e paint gun.
-- Controles para ativar os efeitos, escolher os dois tipos de efeito, cor e duração.
-- Uma entrada Gboard Cafe no recurso de preferências do Gboard, apontando para uma Activity dentro do pacote do Gboard.
-- Editor para reordenar as teclas dentro de cada linha, ocultar/mostrar teclas existentes e restaurar a ordem original.
-- Persistência do layout e reaplicação após a reconstrução da árvore de Views, quando as identidades e linhas ainda correspondem.
+- O DEX da extensão continha classes sintéticas de listeners renomeadas pelo R8 para nomes globais como `La;`, `Lb;` e `Lc;`.
+- O DEX original do Gboard já continha uma classe `Lc;` em `classes2.dex`.
+- A classe `Lc;` do Gboard tinha um construtor `(Lay;)`; a classe sintética do Cafe exigia `(GboardCafeSettingsActivity; I)`.
+- Ao mesclar a extensão no APK host, a referência ao descritor global `Lc;` podia resolver para a classe original do Gboard, gerando `NoSuchMethodError`.
 
-**Importante:** a implementação compila na infraestrutura CI, mas ainda não foi aplicada ao APK e testada em um aparelho. O arquivo `.mpp` não deve ser tratado como uma versão validada para instalação até que o patch seja aplicado pelo Morphe e testado no dispositivo.
+A correção adiciona `-dontobfuscate` e regras keep específicas à extensão, preservando o namespace `app.gboard.cafe.runtime` também para classes sintéticas. O critério de aceitação para essa correção é inspecionar o DEX do novo `.mpp` e confirmar que não há classes sintéticas da extensão com descritores globais de uma letra.
 
 ## Alvo inicial
 
-- Aplicativo: Gboard
 - Pacote: `com.google.android.inputmethod.latin`
-- Versão de referência: `18.5.4.993608717-release-arm64-v8a`
-- Arquivo analisado: XAPK arm64-v8a
+- Versão: `18.5.4.993608717-release-arm64-v8a`
+- Arquivo de referência fornecido: XAPK arm64-v8a
+- Compatibilidade: somente a versão acima até nova análise
 
-## Estratégia técnica
+## Recursos
 
-- Reaproveitar apenas conceitos independentes dos serviços privados do Samsung Honeyboard.
-- Recriar efeitos com desenho procedural original; nenhum bytecode ou recurso visual do APK Samsung é redistribuído.
-- Inserir os hooks somente nos métodos verificados do build-alvo.
-- Integrar os controles ao recurso de configurações do Gboard, sem depender de um aplicativo externo.
-- Falhar com segurança se classe, método, parâmetros ou versão não corresponderem ao alvo.
+### Efeitos por tecla
+Ripple, flash de cor, contorno, bounce, partículas, tinta, blob, blob expansivo e pegadas.
 
-## Limitações conhecidas
+### Efeitos no teclado inteiro
+Anéis expansivos, faíscas, faíscas giratórias, fogos, blob, blob expansivo, onda de contorno e paint gun.
 
-- O editor atual reorganiza teclas dentro da mesma linha. Mover teclas entre linhas, criar teclas novas e editar ações/long-press ainda não estão implementados.
-- Variantes de idioma, páginas de símbolos, layouts de tablet/flutuante e acessibilidade precisam ser testados.
-- A aparência e a resposta dos efeitos precisam de validação física, especialmente com multitouch.
-- Somente a versão Gboard indicada é alvo deste patch.
+### Editor de layout
+Reordena teclas existentes dentro da mesma linha, oculta/mostra teclas e restaura o layout original. Criar teclas novas e mover teclas entre linhas ainda não está implementado.
 
-## Estrutura
+## Build e validação
 
-- `patches/`: patches Kotlin Morphe e modelos.
-- `extensions/gboard-cafe/`: Activity de configurações e runtime Java.
-- `.github/workflows/build.yml`: compilação automática e upload do bundle `.mpp`.
-- `docs/REVERSE_ENGINEERING.md`: achados dos APKs.
-- `docs/IMPLEMENTATION_PLAN.md`: etapas e critérios de validação.
+GitHub Actions compila o único bundle `.mpp`. Build bem-sucedido prova a compilação; **não** prova que o Morphe aplicou o patch, que o APK instala ou que o runtime funciona. Antes de publicar uma versão validada, é necessário:
+- inspecionar o DEX final da extensão e confirmar ausência de classes de uma letra fora do namespace;
+- aplicar os patches no Gboard 18.5.4;
+- instalar, abrir as configurações, testar ambos os renderizadores e salvar/reabrir um layout num dispositivo real.
 
-## Compilar
+## Licença e marcas
 
-Requisitos: JDK 17, Android SDK e credencial GitHub com leitura do GitHub Packages do Morphe.
-
-```bash
-./gradlew :patches:buildAndroid
-```
-
-O workflow do GitHub Actions publica o `.mpp` como artefato de workflow.
-
-## Créditos e licenças
-
-Keys Cafe e Gboard são marcas e aplicativos de seus respectivos titulares. Este projeto é independente e não é afiliado à Samsung ou ao Google. Não inclui nem redistribui os APKs enviados para análise.
+Projeto independente, sem afiliação com Samsung ou Google. Não redistribui os APKs fornecidos.

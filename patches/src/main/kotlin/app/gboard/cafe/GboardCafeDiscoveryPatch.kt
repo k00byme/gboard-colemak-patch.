@@ -1,17 +1,7 @@
 package app.gboard.cafe
 
-import app.morphe.patcher.patch.AppTarget
-import app.morphe.patcher.patch.Compatibility
 import app.morphe.patcher.patch.document
 import app.morphe.patcher.patch.resourcePatch
-
-private val gboardCompatibility = Compatibility(
-    name = "Gboard",
-    packageName = "com.google.android.inputmethod.latin",
-    targets = listOf(
-        AppTarget(version = "18.5.4.993608717-release-arm64-v8a"),
-    ),
-)
 
 /**
  * Analysis-only patch for the exact Gboard build supplied with this project.
@@ -25,7 +15,7 @@ val gboardCafeDiscoveryPatch = resourcePatch(
     description = "Validates the target Gboard keyboard-definition resources.",
     default = false,
 ) {
-    compatibleWith(gboardCompatibility)
+    compatibleWith(gboardCafeCompatibility)
 
     execute {
         val entries = listApkEntries("res/")
