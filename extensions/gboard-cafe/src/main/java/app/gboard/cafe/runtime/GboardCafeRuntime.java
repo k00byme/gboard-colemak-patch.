@@ -944,6 +944,9 @@ public final class GboardCafeRuntime {
             report.append("Key touch hooks: ").append(keyTouchEvents).append('\n');
             report.append("Board touch hooks: ").append(boardTouchEvents).append('\n');
             report.append("Layout callbacks: ").append(layoutCallbacks).append('\n');
+            report.append("Last layout status: ").append(lastLayoutStatus).append('\n');
+            report.append("Last applied keys: ").append(lastAppliedKeyCount).append('\n');
+            report.append("Last applied rows: ").append(lastAppliedRowCount).append('\n');
             try {
                 android.content.pm.PackageInfo info = context.getPackageManager()
                         .getPackageInfo(context.getPackageName(), 0);
