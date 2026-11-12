@@ -406,6 +406,7 @@ public final class GboardCafeSettingsActivity extends Activity {
         rowScroll.addView(rowsHost);
         panel.addView(rowScroll);
 
+        Runnable refresh = () -> renderEditorRows(rowsHost, rows, selected, rows, null);
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
         actions.setGravity(Gravity.CENTER_VERTICAL);
@@ -451,7 +452,6 @@ public final class GboardCafeSettingsActivity extends Activity {
         final AlertDialog dialog = new AlertDialog.Builder(this).setView(panel)
                 .setNegativeButton("Fechar", null).create();
 
-        Runnable refresh = () -> renderEditorRows(rowsHost, rows, selected, rows, null);
         // Keep the dialog's rows bound to the same model and render callbacks.
         renderEditorRows(rowsHost, rows, selected, rows, refresh);
 
