@@ -22,6 +22,38 @@ private val gboardCafeSettingsEntry = resourcePatch(
 ) {
     compatibleWith(gboardCafeCompatibility)
     execute {
+        // The extension contributes DEX classes, not manifest entries. Register
+        // the settings Activity in the target APK itself before adding its route.
+        document("AndroidManifest.xml").use { manifest ->
+            val application = manifest.getElementsByTagName("application").item(0)
+                ?: error("Gboard application element not found in AndroidManifest.xml")
+            val activities = manifest.getElementsByTagName("activity")
+            var activityFound = false
+            for (i in 0 until activities.length) {
+                val node = activities.item(i)
+                val name = node.attributes?.getNamedItemNS(
+                    "http://schemas.android.com/apk/res/android", "name"
+                )?.nodeValue
+                if (name == "app.gboard.cafe.runtime.GboardCafeSettingsActivity") {
+                    activityFound = true
+                    break
+                }
+            }
+            if (!activityFound) {
+                val ns = "http://schemas.android.com/apk/res/android"
+                val activity = manifest.createElement("activity")
+                activity.setAttributeNS(
+                    ns, "android:name", "app.gboard.cafe.runtime.GboardCafeSettingsActivity"
+                )
+                activity.setAttributeNS(ns, "android:exported", "false")
+                activity.setAttributeNS(ns, "android:excludeFromRecents", "true")
+                activity.setAttributeNS(
+                    ns, "android:theme", "@android:style/Theme.Material.Light.NoActionBar"
+                )
+                application.appendChild(activity)
+            }
+        }
+
         document("res/0CM.xml").use { xml ->
             val root = xml.documentElement
             val existing = root.getElementsByTagName("Preference")
