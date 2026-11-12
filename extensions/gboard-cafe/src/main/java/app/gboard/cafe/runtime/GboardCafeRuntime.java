@@ -402,7 +402,13 @@ public final class GboardCafeRuntime {
                 else onlyKeys = false;
             }
 
-            if (onlyKeys && keys.size() >= 2 && rowIndex[0] < rows.length()) {
+            ArrayList<String> rowLabels = new ArrayList<>();
+            for (View key : keys) rowLabels.add(label(key));
+            boolean stableLabels = new HashSet<>(rowLabels).size() == rowLabels.size();
+
+            // captureRowsRecursive skips duplicate labels; keep the exact same rule
+            // here so a skipped row can never shift the index of later rows.
+            if (onlyKeys && keys.size() >= 2 && stableLabels && rowIndex[0] < rows.length()) {
                 JSONArray savedRow = rows.optJSONArray(rowIndex[0]++);
                 if (savedRow != null && savedRow.length() == keys.size()) {
                     ArrayList<String> order = new ArrayList<>();
