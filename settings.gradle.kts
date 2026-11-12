@@ -19,3 +19,14 @@ pluginManagement {
 plugins {
     id("app.morphe.patches") version "2.1.0"
 }
+
+settings {
+    extensions {
+        defaultNamespace = "app.gboard.cafe.runtime"
+        proguardFiles(rootProject.projectDir.resolve("extensions/proguard-rules.pro").toString())
+    }
+}
+
+include(":patches")
+include(":patches:stub")
+include(":extensions:gboard-cafe")
