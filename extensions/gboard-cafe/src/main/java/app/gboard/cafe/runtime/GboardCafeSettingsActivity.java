@@ -422,6 +422,32 @@ public final class GboardCafeSettingsActivity extends Activity {
         actions.addView(save, saveParams);
         panel.addView(actions);
 
+        LinearLayout movement = new LinearLayout(this);
+        movement.setOrientation(LinearLayout.HORIZONTAL);
+        movement.setGravity(Gravity.CENTER);
+        movement.setPadding(0, dp(8), 0, 0);
+        String[] directions = {"←", "→", "↑", "↓"};
+        int[] moves = {-1, 1, -2, 2};
+        for (int i = 0; i < directions.length; i++) {
+            final int delta = moves[i];
+            TextView move = actionButton(directions[i]);
+            LinearLayout.LayoutParams moveParams = new LinearLayout.LayoutParams(
+                    0, dp(42), 1f);
+            moveParams.leftMargin = dp(3);
+            moveParams.rightMargin = dp(3);
+            move.setOnClickListener(v -> {
+                if (selected[0] == null) {
+                    Toast.makeText(this, "Selecione uma tecla primeiro", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                if (moveSelected(rows, selected[0], delta)) {
+                    renderEditorRows(rowsHost, rows, selected, rows, refresh);
+                }
+            });
+            movement.addView(move, moveParams);
+        }
+        panel.addView(movement);
+
         final AlertDialog dialog = new AlertDialog.Builder(this).setView(panel)
                 .setNegativeButton("Fechar", null).create();
 
@@ -447,7 +473,9 @@ public final class GboardCafeSettingsActivity extends Activity {
                 result[i] = rows.get(i).toArray(new String[0]);
             }
             GboardCafeRuntime.setRows(this, result);
-            Toast.makeText(this, "Layout salvo", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this,
+                    "Layout salvo. Volte ao teclado para aplicar as mudanças.",
+                    Toast.LENGTH_LONG).show();
             dialog.dismiss();
         });
 
@@ -583,6 +611,51 @@ public final class GboardCafeSettingsActivity extends Activity {
             default:
                 return false;
         }
+    }
+
+    private boolean moveSelected(
+            ArrayList<ArrayList<String>> rows, String token, int direction) {
+        int sourceRow = -1;
+        int sourceIndex = -1;
+        for (int r = 0; r < rows.size(); r++) {
+            int index = rows.get(r).indexOf(token);
+            if (index >= 0) {
+                sourceRow = r;
+                sourceIndex = index;
+                break;
+            }
+        }
+        if (sourceRow < 0) return false;
+
+        int targetRow = sourceRow;
+        int targetIndex = sourceIndex;
+        if (direction == -1) targetIndex--;
+        else if (direction == 1) targetIndex++;
+        else if (direction == -2) {
+            targetRow--;
+            targetIndex = Math.min(sourceIndex, targetRow >= 0 ? rows.get(targetRow).size() : 0);
+        } else if (direction == 2) {
+            targetRow++;
+            targetIndex = Math.min(sourceIndex, targetRow < rows.size() ? rows.get(targetRow).size() : 0);
+        }
+
+        if (targetRow < 0 || targetRow >= rows.size()) {
+            Toast.makeText(this, "Não existe outra linha nessa direção", Toast.LENGTH_SHORT).show();
+            return false;
+        }
+        if (targetRow == sourceRow && (targetIndex < 0 || targetIndex >= rows.get(sourceRow).size())) {
+            return false;
+        }
+        if (targetRow == sourceRow) {
+            String item = rows.get(sourceRow).remove(sourceIndex);
+            int insertion = Math.max(0, Math.min(targetIndex, rows.get(sourceRow).size()));
+            rows.get(sourceRow).add(insertion, item);
+        } else {
+            rows.get(sourceRow).remove(sourceIndex);
+            int insertion = Math.max(0, Math.min(targetIndex, rows.get(targetRow).size()));
+            rows.get(targetRow).add(insertion, token);
+        }
+        return true;
     }
 
     private boolean moveToken(
