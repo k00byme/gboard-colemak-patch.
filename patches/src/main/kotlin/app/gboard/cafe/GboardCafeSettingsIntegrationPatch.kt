@@ -46,16 +46,13 @@ val gboardCafeSettingsIntegrationPatch = resourcePatch(
         document("res/0CM.xml").use { xml ->
             val root = xml.documentElement
             val existing = root.getElementsByTagName("Preference")
-            var item = (0 until existing.length)
-                .map { existing.item(it) }
+            val item = (0 until existing.length)
+                .mapNotNull { existing.item(it) as? org.w3c.dom.Element }
                 .firstOrNull { node ->
-                    node.attributes?.getNamedItemNS(androidNs, "key")?.nodeValue == "gboard_cafe_settings"
-                }
+                    node.getAttributeNS(androidNs, "key") == "gboard_cafe_settings"
+                } ?: xml.createElement("Preference").also { root.appendChild(it) }
 
-            if (item == null) {
-                item = xml.createElement("Preference")
-                root.appendChild(item)
-            } else {
+            run {
                 val children = item.childNodes
                 for (i in children.length - 1 downTo 0) {
                     val child = children.item(i)
@@ -79,6 +76,7 @@ val gboardCafeSettingsIntegrationPatch = resourcePatch(
                 "app.gboard.cafe.runtime.GboardCafeSettingsActivity"
             )
             item.appendChild(intent)
+            }
         }
     }
 }
