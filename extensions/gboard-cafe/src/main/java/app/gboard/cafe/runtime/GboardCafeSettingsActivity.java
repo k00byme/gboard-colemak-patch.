@@ -45,12 +45,7 @@ public final class GboardCafeSettingsActivity extends Activity {
     private Spinner effect;
     private Spinner boardEffect;
     private EditText color;
-    private Spinner duration;
-    private static final int[] DURATION_VALUES = {80, 120, 180, 260, 350, 500, 700, 900, 1200};
-    private static final String[] DURATION_LABELS = {
-            "80 ms", "120 ms", "180 ms", "260 ms", "350 ms",
-            "500 ms", "700 ms", "900 ms", "1200 ms"
-    };
+    private TextView durationInfo;
     private String stage = "inicialização";
 
     @Override protected void onCreate(Bundle state) {
@@ -69,53 +64,33 @@ public final class GboardCafeSettingsActivity extends Activity {
 
     private void showStartupError(Throwable error) {
         try {
+            TextView report = new TextView(this);
+            StringBuilder details = new StringBuilder();
+            details.append("Gboard Cafe falhou ao abrir.\n\n");
+            details.append("Etapa: ").append(stage).append("\n");
+            details.append("Erro: ").append(error.getClass().getName()).append("\n");
+            details.append("Mensagem: ").append(error.getMessage()).append("\n\n");
+            java.io.StringWriter buffer = new java.io.StringWriter();
+            java.io.PrintWriter writer = new java.io.PrintWriter(buffer);
+            error.printStackTrace(writer);
+            writer.flush();
+            details.append(buffer.toString());
+            report.setText(details.toString());
+            report.setTextColor(Color.BLACK);
+            report.setTextSize(13);
+            report.setTextIsSelectable(true);
+            report.setPadding(28, 28, 28, 28);
             android.widget.ScrollView scroll = new android.widget.ScrollView(this);
-            LinearLayout page = new LinearLayout(this);
-            page.setOrientation(LinearLayout.VERTICAL);
-            page.setPadding(dp(20), dp(24), dp(20), dp(24));
-            page.setBackgroundColor(Color.WHITE);
-
-            TextView title = new TextView(this);
-            title.setText("Gboard Cafe não conseguiu abrir as configurações.");
-            title.setTextColor(Color.BLACK);
-            title.setTextSize(19);
-            page.addView(title);
-
-            TextView explanation = new TextView(this);
-            explanation.setText("Falha em: " + stage + "\n\n"
-                    + error.getClass().getName() + "\n"
-                    + (error.getMessage() == null ? "(sem mensagem)" : error.getMessage()));
-            explanation.setTextColor(0xFFB00020);
-            explanation.setTextSize(14);
-            explanation.setTextIsSelectable(true);
-            explanation.setPadding(0, dp(16), 0, dp(16));
-            page.addView(explanation);
-
-            Button copy = button("Copiar diagnóstico");
-            copy.setOnClickListener(v -> {
-                try {
-                    android.content.ClipboardManager clipboard =
-                            (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
-                    String report = "Gboard Cafe\nEtapa: " + stage + "\n"
-                            + Log.getStackTraceString(error);
-                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Gboard Cafe", report));
-                    android.widget.Toast.makeText(this, "Diagnóstico copiado", android.widget.Toast.LENGTH_SHORT).show();
-                } catch (Throwable ignored) {}
-            });
-            page.addView(copy);
-
-            Button close = button("Fechar");
-            close.setOnClickListener(v -> finish());
-            page.addView(close);
-
-            scroll.addView(page);
+            scroll.addView(report);
             setContentView(scroll);
-        } catch (Throwable fallbackError) {
+            Log.e("GboardCafe", details.toString());
+        } catch (Throwable diagnosticFailure) {
             TextView fallback = new TextView(this);
-            fallback.setText("Falha: " + error.getClass().getSimpleName()
-                    + "\nEtapa: " + stage);
+            fallback.setText("Erro: " + error.getClass().getName()
+                    + "\nEtapa: " + stage
+                    + "\nFalha ao exibir stack trace: " + diagnosticFailure.getClass().getName());
             fallback.setTextColor(Color.BLACK);
-            fallback.setPadding(32, 32, 32, 32);
+            fallback.setPadding(28, 28, 28, 28);
             setContentView(fallback);
         }
     }
@@ -179,16 +154,13 @@ public final class GboardCafeSettingsActivity extends Activity {
         color.setText(prefs.getString("gboard_cafe_color", "#CFB08E"));
         page.addView(color);
 
-        stage = "criando o controle de duração";
+        stage = "criando a informação de duração";
         addLabel(page, "Duração do efeito");
-        duration = new Spinner(this);
-        ArrayAdapter<String> durationAdapter = new ArrayAdapter<String>(this,
-                android.R.layout.simple_spinner_item, DURATION_LABELS);
-        durationAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        duration.setAdapter(durationAdapter);
-        duration.setSelection(indexOfDuration(
-                clamp(prefs.getInt("gboard_cafe_duration", 260), 80, 1200)));
-        page.addView(duration);
+        durationInfo = new TextView(this);
+        durationInfo.setText("260 ms (padrão temporário)");
+        durationInfo.setTextColor(0xFF555555);
+        durationInfo.setTextSize(14);
+        page.addView(durationInfo);
 
         Button save = button("Salvar efeitos");
         save.setOnClickListener(v -> saveSettings());
@@ -237,7 +209,7 @@ public final class GboardCafeSettingsActivity extends Activity {
                 .putString("gboard_cafe_effect", effectValue)
                 .putString("gboard_cafe_board_effect", boardEffectValue)
                 .putString("gboard_cafe_color", String.format("#%08X", parsed))
-                .putInt("gboard_cafe_duration", DURATION_VALUES[Math.max(0, Math.min(duration.getSelectedItemPosition(), DURATION_VALUES.length - 1))])
+                .putInt("gboard_cafe_duration", 260)
                 .apply();
         android.widget.Toast.makeText(this, "Configurações salvas", android.widget.Toast.LENGTH_SHORT).show();
     }
@@ -376,19 +348,6 @@ public final class GboardCafeSettingsActivity extends Activity {
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
-
-    private int indexOfDuration(int value) {
-        int best = 0;
-        int distance = Integer.MAX_VALUE;
-        for (int i = 0; i < DURATION_VALUES.length; i++) {
-            int currentDistance = Math.abs(DURATION_VALUES[i] - value);
-            if (currentDistance < distance) {
-                distance = currentDistance;
-                best = i;
-            }
-        }
-        return best;
-    }
 
     private int indexOf(String[] values, String target) {
         for (int i = 0; i < values.length; i++) if (values[i].equals(target)) return i;
