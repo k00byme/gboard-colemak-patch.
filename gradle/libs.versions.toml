@@ -1,6 +1,7 @@
 [versions]
 morphe-patcher = "2.3.0"
 gson = "2.15.0"
+smali = "4220ae75f7"
 
 [libraries]
 gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
