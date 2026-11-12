@@ -2,39 +2,55 @@
 
 ## Patch architecture
 
-- [x] Split the old monolithic patch into independent Core, Settings Integration, Key Effects, Board Effects, Key Layout Editor, and Diagnostics patches.
-- [x] Keep all patch definitions in one .mpp output.
-- [x] Make feature patches depend on the shared Core/settings integration rather than injecting the same extension repeatedly.
-- [x] Preserve the runtime namespace and prevent R8 obfuscation of synthetic listener classes.
+- [x] Split into independent Core, Settings Integration, Key Effects, Board Effects, Key Layout Editor, and Diagnostics patches.
+- [x] Keep every patch inside one Morphe .mpp bundle.
+- [x] Share runtime/settings dependencies without duplicating extension injection.
+- [x] Preserve extension package names, including synthetic listeners, to prevent collisions with Gboard's obfuscated classes.
 
-## Crash root cause and fix
+## Crash root cause and correction
 
-- [x] Read the full NoSuchMethodError stack trace.
-- [x] Inspect extension DEX: the Activity's save-button listener invoked `Lc;.<init>(GboardCafeSettingsActivity, int)`.
-- [x] Inspect the original Gboard DEX: `Lc;` already exists in `classes2.dex` and only exposes a different constructor `(Lay;)`.
-- [x] Add `-dontobfuscate` and package keep rules so extension synthetic classes cannot collide with host obfuscated classes.
-- [ ] Inspect new .mpp DEX and prove all synthetic listener descriptors remain namespaced.
+- [x] Analyse the full `NoSuchMethodError` stack trace.
+- [x] Confirm the extension referenced `Lc;.<init>(GboardCafeSettingsActivity, int)`.
+- [x] Confirm Gboard already had its own `Lc;` with a different constructor.
+- [x] Add `-dontobfuscate` and package-specific keep rules.
+- [x] Check generated extension DEX for namespaced synthetic classes and absence of one-letter root class descriptors.
 
-## Features
+## Settings and effects
 
-- [x] Key effects runtime and UI.
-- [x] Whole-board effects runtime and UI.
-- [x] Persistent within-row key ordering and hide/show/reset UI.
-- [x] Gboard settings entry for the main Cafe screen.
-- [x] Optional diagnostics page.
-- [ ] Extend the editor to cross-row movement/new keys only after DEX/layout-definition behavior is validated.
+- [x] Dark, rounded settings UI.
+- [x] Preset color palette and optional hexadecimal color.
+- [x] Key-level visual effects.
+- [x] Whole-board visual effects.
+- [x] Automatic fade and overlay removal independent of ACTION_UP.
+- [x] Explicit delayed-removal fallback and clear-active-effects action on save.
+- [x] Migrate previous hidden-key preferences.
 
-## Release validation
+## Key layout editor
 
-- [ ] Latest CI bundle compiles.
-- [ ] Inspect generated extension DEX for collisions.
-- [ ] Apply the modular patches to the supplied Gboard XAPK using Morphe.
-- [ ] Install and test on a real device.
-- [ ] Verify the Settings Integration screen, key effects, board effects, and layout persistence.
-- [ ] Mark as device-tested only after the user's device confirms runtime behavior.
+- [x] Visual drag-and-drop editor.
+- [x] Move existing keys within a row or between existing rows.
+- [x] Allow empty rows and arbitrary numbers of removed keys.
+- [x] Hide omitted original keys so the original layout can be restored.
+- [x] Recalculate LinearLayout key weights so remaining visible keys fill row space.
+- [x] Add custom text keys using the active IME InputConnection.
+- [x] Stable per-key IDs, including repeated labels and duplicate custom text.
+- [x] Apply only when the complete primary keyboard key set matches the captured baseline.
+
+## Release checks
+
+- [x] Latest GitHub Actions build succeeds.
+- [x] Produce a single .mpp bundle.
+- [ ] Inspect latest bundle DEX for synthetic class namespace collisions.
+- [ ] Apply the bundle to the supplied Gboard XAPK using Morphe.
+- [ ] Install and test on the Galaxy A15.
+- [ ] Verify key and board effect expiry on device.
+- [ ] Verify drag/drop, removal, row fill, custom text insertion, persistence, and reset on device.
+- [ ] Verify symbol and numeric layouts remain unchanged.
+- [ ] Mark release as device-tested only after confirmation from the device.
 
 ## Known limitations
 
-- Layout editing is limited to reordering within existing rows and hiding/showing existing keys.
-- Board/key effect timing and multitouch need device testing.
-- Gboard updates, locales, symbol pages, number pad, floating/tablet mode, and accessibility need separate validation.
+- Custom keys insert literal text. They do not define arbitrary native Gboard key actions or long-press alternatives.
+- New keyboard rows and manual width/height sizing are not implemented.
+- Equal-width/weight redistribution is applied to compatible LinearLayout row containers; other containers are left untouched.
+- Runtime behavior and touch timing still require physical-device validation across supported input layouts and accessibility modes.
