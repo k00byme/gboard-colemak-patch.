@@ -73,9 +73,17 @@ public final class GboardCafeRuntime {
     }
 
     /** Injected after SoftKeyboardView.onLayout; captures and applies key rows. */
-    public static void afterLayout(View keyboard) {
+    public static void afterLayout(final View keyboard) {
         if (!(keyboard instanceof ViewGroup)) return;
         lastKeyboard = new WeakReference<>(keyboard);
+        // Never detach/reinsert child views while Gboard is in its own onLayout pass.
+        keyboard.post(new Runnable() {
+            @Override public void run() { applySavedLayout(keyboard); }
+        });
+    }
+
+    private static void applySavedLayout(View keyboard) {
+        if (!(keyboard instanceof ViewGroup)) return;
         SharedPreferences p = prefs(keyboard.getContext());
         ViewGroup root = (ViewGroup) keyboard;
 
@@ -304,7 +312,7 @@ public final class GboardCafeRuntime {
             if (released && fade <= 0f) {
                 host.getOverlay().remove(this);
                 EFFECTS.remove(host);
-            } else host.postInvalidateOnAnimation();
+            } else if (released || progress < 1f) host.postInvalidateOnAnimation();
         }
         @Override public void setAlpha(int alpha) { paint.setAlpha(alpha); invalidateSelf(); }
         @Override public void setColorFilter(android.graphics.ColorFilter filter) { paint.setColorFilter(filter); invalidateSelf(); }
