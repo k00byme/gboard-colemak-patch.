@@ -45,6 +45,8 @@ public final class GboardCafeRuntime {
             "com.google.android.libraries.inputmethod.widgets.SoftKeyView";
     private static final String KEY_ID_PREFIX = "@gboardcafe:key:";
     private static final String CUSTOM_KEY_PREFIX = "@gboardcafe:custom:";
+    private static final String DEFAULT_LAYOUT_PRESET_APPLIED_KEY =
+            "gboard_cafe_default_qgfpw_layout_applied_v1";
     private static final WeakHashMap<View, String> STABLE_KEY_IDS = new WeakHashMap<>();
     private static final WeakHashMap<View, EffectDrawable> EFFECTS = new WeakHashMap<>();
     private static final WeakHashMap<View, BoardEffectDrawable> BOARD_EFFECTS = new WeakHashMap<>();
@@ -190,21 +192,37 @@ public final class GboardCafeRuntime {
             if (!(keyboard instanceof ViewGroup)) return;
             layoutCallbacks++;
             lastKeyboard = new WeakReference<>(keyboard);
+            ViewGroup root = (ViewGroup) keyboard;
             SharedPreferences p = prefs(keyboard.getContext());
             String original = p.getString("gboard_cafe_original_rows", null);
             if (TextUtils.isEmpty(original)) {
-                JSONArray captured = captureRows((ViewGroup) keyboard);
-                if (isPrimaryLayout(captured)) {
-                    String encoded = captured.toString();
-                    p.edit().putString("gboard_cafe_original_rows", encoded)
-                            .putString("gboard_cafe_custom_rows", encoded).apply();
-                }
+                JSONArray captured = captureRows(root);
+                if (!isPrimaryLayout(captured)) return;
+                String encoded = captured.toString();
+                p.edit().putString("gboard_cafe_original_rows", encoded)
+                        .putString("gboard_cafe_custom_rows", encoded).apply();
             } else {
-                migrateLegacyLayout(p, (ViewGroup) keyboard);
-                JSONArray baseline = parseRows(p.getString("gboard_cafe_original_rows", null));
-                if (baseline != null) assignStableIds((ViewGroup) keyboard, baseline);
-                if (hasCustomization(p)) scheduleApply(keyboard);
+                migrateLegacyLayout(p, root);
+                JSONArray baseline = parseRows(
+                        p.getString("gboard_cafe_original_rows", null));
+                if (baseline != null) assignStableIds(root, baseline);
             }
+
+            // Install this project's keyboard arrangement once, after Gboard's original
+            // key identities have been captured. Existing non-letter keys are retained
+            // at the beginning/end of their original row (for example Shift/Backspace).
+            if (!p.getBoolean(DEFAULT_LAYOUT_PRESET_APPLIED_KEY, false)) {
+                JSONArray baseline = parseRows(
+                        p.getString("gboard_cafe_original_rows", null));
+                JSONArray preset = createDefaultQgfpwLayout(baseline);
+                if (preset != null) {
+                    p.edit().putString("gboard_cafe_custom_rows", preset.toString())
+                            .putBoolean(DEFAULT_LAYOUT_PRESET_APPLIED_KEY, true).apply();
+                    lastLayoutStatus = "Preset Qgfpwjlduh / Arszyneio / Tcxvbkm preparado";
+                }
+            }
+
+            if (hasCustomization(p)) scheduleApply(keyboard);
         } catch (Throwable ignored) {}
     }
 
@@ -695,6 +713,75 @@ public final class GboardCafeRuntime {
             editor.apply();
             assignStableIds(root, stableOriginal);
         } catch (Throwable ignored) {}
+    }
+
+    /**
+     * Builds the QGFPW layout from the original native key views.
+     *
+     * Only a complete 26-letter, three-row Latin keyboard is accepted. Non-letter
+     * keys are kept at the start/end of their original row so Shift and Backspace
+     * remain native Gboard keys instead of being removed by the custom arrangement.
+     */
+    private static JSONArray createDefaultQgfpwLayout(JSONArray originalRows) {
+        if (originalRows == null || originalRows.length() != 3) return null;
+
+        Map<Character, String> letterTokens = new HashMap<>();
+        ArrayList<ArrayList<String>> prefixes = new ArrayList<>();
+        ArrayList<ArrayList<String>> suffixes = new ArrayList<>();
+
+        for (int rowIndex = 0; rowIndex < originalRows.length(); rowIndex++) {
+            JSONArray sourceRow = originalRows.optJSONArray(rowIndex);
+            if (sourceRow == null || sourceRow.length() < 2) return null;
+
+            ArrayList<String> prefix = new ArrayList<>();
+            ArrayList<String> suffix = new ArrayList<>();
+            boolean sawLetter = false;
+            boolean sawTrailingKey = false;
+
+            for (int keyIndex = 0; keyIndex < sourceRow.length(); keyIndex++) {
+                String token = sourceRow.optString(keyIndex, "");
+                if (TextUtils.isEmpty(token)) return null;
+
+                String shown = getDisplayLabel(token);
+                char letter = 0;
+                if (shown != null && shown.length() == 1) {
+                    char candidate = Character.toLowerCase(shown.charAt(0));
+                    if (candidate >= 'a' && candidate <= 'z') letter = candidate;
+                }
+
+                if (letter != 0) {
+                    // A non-letter key between letters would make the requested
+                    // fixed 10/9/7 split ambiguous, so leave that target untouched.
+                    if (sawTrailingKey || letterTokens.put(letter, token) != null) return null;
+                    sawLetter = true;
+                } else if (sawLetter) {
+                    sawTrailingKey = true;
+                    suffix.add(token);
+                } else {
+                    prefix.add(token);
+                }
+            }
+            prefixes.add(prefix);
+            suffixes.add(suffix);
+        }
+
+        if (letterTokens.size() != 26) return null;
+        for (char letter = 'a'; letter <= 'z'; letter++) {
+            if (!letterTokens.containsKey(letter)) return null;
+        }
+
+        String[] targetRows = {"qgfpwjlduh", "arszyneio", "tcxvbkm"};
+        JSONArray result = new JSONArray();
+        for (int rowIndex = 0; rowIndex < targetRows.length; rowIndex++) {
+            JSONArray target = new JSONArray();
+            for (String token : prefixes.get(rowIndex)) target.put(token);
+            for (char letter : targetRows[rowIndex].toCharArray()) {
+                target.put(letterTokens.get(letter));
+            }
+            for (String token : suffixes.get(rowIndex)) target.put(token);
+            result.put(target);
+        }
+        return result;
     }
 
     private static boolean isPrimaryLayout(JSONArray rows) {
