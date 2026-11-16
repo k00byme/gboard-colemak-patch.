@@ -113,25 +113,11 @@ public final class GboardCafeRuntime {
      * measured keyboard view when the IME becomes active again.
      */
     public static void onKeyboardTouch(View keyboard, MotionEvent event) {
-        try {
-            if (keyboard == null || event == null) return;
-            int action = event.getActionMasked();
-            if (action != MotionEvent.ACTION_DOWN
-                    && action != MotionEvent.ACTION_POINTER_DOWN) return;
-
+        // This hook is invoked for every key press. Do not traverse the keyboard
+        // tree, reflect over key classes, or reorder views here; doing that on the
+        // input path causes visible typing latency.
+        if (keyboard != null && event != null) {
             lastKeyboard = new WeakReference<>(keyboard);
-            if (keyboard instanceof ViewGroup) {
-                initializeLayoutAndColors(keyboard, (ViewGroup) keyboard);
-            } else {
-                applyBlackGrayColors(keyboard);
-            }
-
-            // initializeLayoutAndColors already schedules any required layout
-            // move. Do not post a second competing apply from the same touch.
-        } catch (Throwable error) {
-            lastLayoutStatus = "Hook de toque/layout falhou: "
-                    + error.getClass().getSimpleName() + ": " + error.getMessage();
-            android.util.Log.e("GboardCafe", lastLayoutStatus, error);
         }
     }
 
@@ -199,7 +185,25 @@ public final class GboardCafeRuntime {
             if (!(keyboard instanceof ViewGroup)) return;
             layoutCallbacks++;
             lastKeyboard = new WeakReference<>(keyboard);
-            initializeLayoutAndColors(keyboard, (ViewGroup) keyboard);
+            final ViewGroup root = (ViewGroup) keyboard;
+            // Run after Gboard finishes its own layout pass. The forced layout
+            // logic works from the live positions of the 26 native letter keys.
+            root.post(() -> {
+                try {
+                    if (applyForcedQgfpwLayout(root)) {
+                        lastLayoutStatus = "Preset Qgfpwjlduh / Arszyneio / Tcxvbkm aplicado diretamente";
+                        lastAppliedKeyCount = 26;
+                        lastAppliedRowCount = 3;
+                    } else {
+                        lastLayoutStatus = "Aguardando três fileiras alfabéticas 10/9/7";
+                    }
+                    applyBlackGrayColors(root);
+                } catch (Throwable error) {
+                    lastLayoutStatus = "Falha ao aplicar layout: "
+                            + error.getClass().getSimpleName() + ": " + error.getMessage();
+                    android.util.Log.e("GboardCafe", lastLayoutStatus, error);
+                }
+            });
         } catch (Throwable error) {
             lastLayoutStatus = "Falha no pós-layout: "
                     + error.getClass().getSimpleName() + ": " + error.getMessage();
@@ -319,6 +323,146 @@ public final class GboardCafeRuntime {
         return letter >= 'a' && letter <= 'z';
     }
 
+    /**
+     * Reorders the existing native SoftKeyView objects based on their actual
+     * screen rows, not on a guessed ViewGroup tree. This avoids depending on
+     * Gboard's private helper/spacer hierarchy and keeps native key behaviour.
+     */
+    private static boolean applyForcedQgfpwLayout(ViewGroup root) {
+        try {
+            ArrayList<View> allKeys = new ArrayList<>();
+            collectKeyViews(root, allKeys);
+
+            Map<Character, View> byLetter = new HashMap<>();
+            ArrayList<ArrayList<View>> rows = new ArrayList<>();
+            ArrayList<Integer> rowCenters = new ArrayList<>();
+            int tolerance = dp(root, 16);
+
+            for (View key : allKeys) {
+                String shown = displayLabelForKey(key);
+                if (!isSingleLatinLetter(shown)) continue;
+                char letter = Character.toLowerCase(shown.charAt(0));
+                if (byLetter.put(letter, key) != null) return false;
+
+                int[] location = new int[2];
+                key.getLocationOnScreen(location);
+                int centerY = location[1] + key.getHeight() / 2;
+
+                int match = -1;
+                int bestDistance = Integer.MAX_VALUE;
+                for (int i = 0; i < rowCenters.size(); i++) {
+                    int distance = Math.abs(rowCenters.get(i) - centerY);
+                    if (distance <= tolerance && distance < bestDistance) {
+                        match = i;
+                        bestDistance = distance;
+                    }
+                }
+                if (match >= 0) {
+                    rows.get(match).add(key);
+                    int size = rows.get(match).size();
+                    rowCenters.set(match, ((rowCenters.get(match).size() - 1) * rowCenters.get(match)
+                            + centerY) / size);
+                } else {
+                    int insertAt = 0;
+                    while (insertAt < rowCenters.size() && rowCenters.get(insertAt) < centerY) {
+                        insertAt++;
+                    }
+                    rowCenters.add(insertAt, centerY);
+                    rows.add(insertAt, new ArrayList<>());
+                    rows.get(insertAt).add(key);
+                }
+            }
+
+            if (byLetter.size() != 26 || rows.size() != 3) return false;
+            for (char letter = 'a'; letter <= 'z'; letter++) {
+                if (!byLetter.containsKey(letter)) return false;
+            }
+
+            final String[] wantedRows = {"qgfpwjlduh", "arszyneio", "tcxvbkm"};
+            for (int row = 0; row < rows.size(); row++) {
+                ArrayList<View> keys = rows.get(row);
+                Collections.sort(keys, (left, right) -> {
+                    int[] a = new int[2];
+                    int[] b = new int[2];
+                    left.getLocationOnScreen(a);
+                    right.getLocationOnScreen(b);
+                    return Integer.compare(a[0] + left.getWidth() / 2,
+                            b[0] + right.getWidth() / 2);
+                });
+                if (keys.size() != wantedRows[row].length()) return false;
+            }
+
+            boolean alreadyCorrect = true;
+            Map<View, View> replacements = new HashMap<>();
+            for (int row = 0; row < rows.size(); row++) {
+                ArrayList<View> slots = rows.get(row);
+                String target = wantedRows[row];
+                for (int column = 0; column < target.length(); column++) {
+                    View targetKey = byLetter.get(target.charAt(column));
+                    replacements.put(slots.get(column), targetKey);
+                    if (slots.get(column) != targetKey) alreadyCorrect = false;
+                }
+            }
+            if (alreadyCorrect) return true;
+
+            // Snapshot every affected parent, including non-letter keys and
+            // helper children. Detach all children first so cross-row moves work.
+            Map<ViewGroup, ArrayList<View>> childrenByParent = new HashMap<>();
+            Map<ViewGroup, ArrayList<ViewGroup.LayoutParams>> paramsByParent = new HashMap<>();
+            for (ArrayList<View> row : rows) {
+                for (View key : row) {
+                    if (!(key.getParent() instanceof ViewGroup)) return false;
+                    ViewGroup parent = (ViewGroup) key.getParent();
+                    if (childrenByParent.containsKey(parent)) continue;
+                    ArrayList<View> children = new ArrayList<>();
+                    ArrayList<ViewGroup.LayoutParams> params = new ArrayList<>();
+                    for (int i = 0; i < parent.getChildCount(); i++) {
+                        View child = parent.getChildAt(i);
+                        children.add(child);
+                        params.add(child.getLayoutParams());
+                    }
+                    childrenByParent.put(parent, children);
+                    paramsByParent.put(parent, params);
+                }
+            }
+
+            for (ViewGroup parent : childrenByParent.keySet()) parent.removeAllViews();
+
+            for (Map.Entry<ViewGroup, ArrayList<View>> entry : childrenByParent.entrySet()) {
+                ViewGroup parent = entry.getKey();
+                ArrayList<View> originalChildren = entry.getValue();
+                ArrayList<ViewGroup.LayoutParams> originalParams = paramsByParent.get(parent);
+                for (int i = 0; i < originalChildren.size(); i++) {
+                    View originalSlot = originalChildren.get(i);
+                    View replacement = replacements.get(originalSlot);
+                    View child = replacement == null ? originalSlot : replacement;
+                    ViewGroup.LayoutParams params = layoutParamsForRow(
+                            parent, child, originalParams.get(i));
+                    parent.addView(child, params);
+                }
+                parent.requestLayout();
+                parent.invalidate();
+            }
+            return true;
+        } catch (Throwable error) {
+            lastLayoutStatus = "Reordenação direta falhou: "
+                    + error.getClass().getSimpleName() + ": " + error.getMessage();
+            android.util.Log.e("GboardCafe", lastLayoutStatus, error);
+            return false;
+        }
+    }
+
+
+    private static boolean isEnterSoftKey(View view) {
+        try {
+            for (Class<?> type = view.getClass(); type != null; type = type.getSuperclass()) {
+                if ("com.google.android.libraries.inputmethod.widgets.EnterSoftKeyView"
+                        .equals(type.getName())) return true;
+            }
+        } catch (Throwable ignored) {}
+        return false;
+    }
+
     private static boolean isBlackAccentKey(String value) {
         if (TextUtils.isEmpty(value)) return false;
         String normalized = value.trim().toLowerCase(java.util.Locale.US);
@@ -427,7 +571,7 @@ public final class GboardCafeRuntime {
                 // Tint every glyph layer, not just the first/main TextView:
                 // secondary numbers and drawable icons use separate children.
                 tintKeyGlyphs(view);
-                if (isBlackAccentKey(shown) || view == bottomRightAction) {
+                if (isBlackAccentKey(shown) || isEnterSoftKey(view) || view == bottomRightAction) {
                     tintBackgrounds(view);
                     tintPrivateBackgroundDrawables(view);
                 }
