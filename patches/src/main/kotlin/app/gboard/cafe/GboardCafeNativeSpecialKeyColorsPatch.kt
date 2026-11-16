@@ -1,6 +1,7 @@
 package app.gboard.cafe
 
 import app.morphe.patcher.patch.resourcePatch
+import app.morphe.patcher.patch.resourceFile
 import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
 
@@ -39,6 +40,7 @@ val gboardCafeNativeSpecialKeyColorsPatch = resourcePatch(
         val updatedNames = LinkedHashSet<String>()
         var changedColorSheets = 0
         var clearedBackgroundSheets = 0
+        var skippedStylesheets = 0
 
         val overlaysToFlatten = setOf(
             "assets/theme/style_sheet_gradient_dark_override.binarypb",
@@ -48,10 +50,20 @@ val gboardCafeNativeSpecialKeyColorsPatch = resourcePatch(
         )
 
         for (path in themePaths) {
-            // Default copy=true extracts the original APK asset before editing.
-            val asset = this[path]
-            check(asset.isFile && asset.length() > 0L) {
-                "Could not extract Gboard theme asset: " + path
+            // Some APK bundles list device-specific theme assets that are not
+            // extractable in every merged APK (for example Android XR sheets).
+            // They are optional for a phone keyboard, so skip only the asset
+            // that cannot be staged and continue processing the usable sheets.
+            val extraction = runCatching { resourceFile(path, copy = true) }
+            val asset = extraction.getOrNull()
+            if (asset == null || !asset.isFile || asset.length() == 0L) {
+                skippedStylesheets++
+                val reason = extraction.exceptionOrNull()?.message
+                println(
+                    "[Gboard Cafe] Skipping unavailable theme asset: " + path +
+                        (reason?.let { " (" + it + ")" } ?: "")
+                )
+                continue
             }
 
             val original = asset.readBytes()
