@@ -1,0 +1,20 @@
+{
+  "format_version": 3,
+  "id": "gboard_cafe_black_gray_qgfpw_v1",
+  "is_light_theme": true,
+  "lock_key_border": false,
+  "name": "Black Gray Minimal",
+  "prefer_key_border": true,
+  "style_sheets": [
+    "colors.css",
+    "style_sheet_md2.css"
+  ],
+  "flavors": [
+    {
+      "type": "BORDER",
+      "style_sheets": [
+        "style_sheet_md2_border.css"
+      ]
+    }
+  ]
+}

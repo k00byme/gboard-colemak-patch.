@@ -79,6 +79,20 @@ A correção adiciona `-dontobfuscate` e regras keep específicas à extensão, 
 
 O GitHub Actions gera um único bundle `.mpp`. Build bem-sucedido confirma compilação, não prova instalação nem comportamento em aparelho. O critério para uma versão testada é aplicar os patches no Gboard 18.5.4, instalar no Galaxy A15 e testar a tela, animações, arrastar/soltar, teclas personalizadas, persistência e restauração.
 
+## Preset QGFPW e tema Black Gray
+
+Na primeira captura válida do teclado latino, o patch aplica uma vez este arranjo:
+
+```text
+Qgfpwjlduh
+Arszyneio
+Tcxvbkm
+```
+
+As teclas nativas que não são letras — como Shift e Backspace — permanecem nas extremidades da própria fileira. Depois dessa aplicação inicial, as alterações feitas no editor e a opção de restaurar o layout original continuam sob controle do usuário.
+
+O build também publica `Gboard_Black_Gray_Custom_Theme.zip`: tema claro com letras e ícones em `#3B3B3B` e teclas de ação/acento em `#000000`. O tema é um arquivo separado porque o Gboard importa temas pelo menu **Tema**; ele não é aplicado automaticamente pelo Morphe. Para importá-lo, o Gboard precisa ter um importador de temas personalizados habilitado.
+
 ## Licença e marcas
 
 Projeto independente, sem afiliação com Samsung ou Google. Não redistribui os APKs enviados para análise.

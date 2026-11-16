@@ -1,0 +1,13 @@
+/* Gboard Cafe — Black Gray Minimal theme */
+@def web_color_bg #F1F1F1;
+@def web_color_label #3B3B3B;
+@def web_color_accent #000000;
+@def web_color_accent_pressed #000000;
+@def web_color_key_bg #FFFFFF;
+@def web_color_key_bg_pressed #E9E9E9;
+@def web_color_secondary_key_bg #E6E6E6;
+@def web_color_secondary_key_bg_pressed #D9D9D9;
+@def web_color_edge #C9C9C9;
+@def default_corner_radius 12;
+@def web_color_tertiary_key_bg #E6E6E6;
+@def web_color_tertiary_key_bg_pressed #D9D9D9;
