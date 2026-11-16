@@ -2,8 +2,8 @@ group = "app.gboard.cafe"
 
 patches {
     about {
-        name = "Gboard Cafe"
-        description = "Rebuilds selected Keys Cafe-inspired effects and keyboard layout editing for Gboard."
+        name = "Gboard QGFPW Black Gray"
+        description = "Applies the Qgfpwjlduh / Arszyneio / Tcxvbkm keyboard layout and integrated Black Gray key colors."
         source = "https://github.com/k00byme/gboard-colemak-patch."
         author = "k00byme"
         contact = "https://github.com/k00byme"
