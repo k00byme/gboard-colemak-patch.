@@ -14,6 +14,7 @@ import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.os.SystemClock;
 import android.util.Base64;
+import android.text.TextPaint;
 import android.text.TextUtils;
 import android.view.MotionEvent;
 import android.view.View;
@@ -609,14 +610,12 @@ public final class GboardCafeRuntime {
         if (view == null) return;
         try {
             if (isKey(view)) {
-                String shown = displayLabelForKey(view);
-                // Tint every glyph layer, not just the first/main TextView:
-                // secondary numbers and drawable icons use separate children.
+                // Every native key gets a black bubble, including letter,
+                // number, symbol, modifier, space-adjacent and action keys.
+                // Glyphs are recolored separately so the symbols stay gray.
+                tintBackgrounds(view);
+                tintPrivateBackgroundDrawables(view);
                 tintKeyGlyphs(view);
-                if (isBlackAccentKey(shown) || isEnterSoftKey(view) || view == bottomRightAction) {
-                    tintBackgrounds(view);
-                    tintPrivateBackgroundDrawables(view);
-                }
             }
             if (view instanceof ViewGroup) {
                 ViewGroup group = (ViewGroup) view;
@@ -698,10 +697,15 @@ public final class GboardCafeRuntime {
                 for (Field field : type.getDeclaredFields()) {
                     if (!Paint.class.isAssignableFrom(field.getType())) continue;
                     String name = field.getName().toLowerCase(java.util.Locale.US);
-                    if (!(name.contains("text") || name.contains("label")
+                    // TextPaint is Android's dedicated glyph paint. Include it
+                    // even when Gboard's obfuscation gives the field a short name.
+                    boolean dedicatedTextPaint = TextPaint.class.isAssignableFrom(field.getType());
+                    if (!dedicatedTextPaint
+                            && !(name.contains("text") || name.contains("label")
                             || name.contains("hint") || name.contains("number")
                             || name.contains("symbol") || name.contains("icon")
-                            || name.contains("secondary"))) continue;
+                            || name.contains("secondary") || name.contains("glyph")
+                            || name.contains("caption") || name.contains("subkey"))) continue;
                     field.setAccessible(true);
                     Object value = field.get(view);
                     if (value instanceof Paint) ((Paint) value).setColor(BLACK_GRAY_LABEL);
