@@ -8,7 +8,8 @@ import app.morphe.patcher.patch.bytecodePatch
 val gboardCafeKeyEffectsPatch = bytecodePatch(
     name = "Key Effects",
     description = "Adds visual effects to the individual key being pressed.",
-    default = true,
+    // Disabled in the low-latency preset; opt in only when effects are wanted.
+    default = false,
 ) {
     compatibleWith(gboardCafeCompatibility)
     dependsOn(gboardCafeSettingsIntegrationPatch)
