@@ -8,6 +8,7 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.PixelFormat;
+import android.graphics.PorterDuff;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
@@ -46,7 +47,11 @@ public final class GboardCafeRuntime {
     private static final String KEY_ID_PREFIX = "@gboardcafe:key:";
     private static final String CUSTOM_KEY_PREFIX = "@gboardcafe:custom:";
     private static final String DEFAULT_LAYOUT_PRESET_APPLIED_KEY =
-            "gboard_cafe_default_qgfpw_layout_applied_v1";
+            "gboard_cafe_default_qgfpw_layout_applied_v2";
+    private static final String DEFAULT_LAYOUT_PRESET_PENDING_KEY =
+            "gboard_cafe_default_qgfpw_layout_pending_v2";
+    private static final int BLACK_GRAY_LABEL = 0xFF3B3B3B;
+    private static final int BLACK_GRAY_ACCENT = 0xFF000000;
     private static final WeakHashMap<View, String> STABLE_KEY_IDS = new WeakHashMap<>();
     private static final WeakHashMap<View, EffectDrawable> EFFECTS = new WeakHashMap<>();
     private static final WeakHashMap<View, BoardEffectDrawable> BOARD_EFFECTS = new WeakHashMap<>();
@@ -111,14 +116,17 @@ public final class GboardCafeRuntime {
                     && action != MotionEvent.ACTION_POINTER_DOWN) return;
 
             lastKeyboard = new WeakReference<>(keyboard);
-            SharedPreferences p = prefs(keyboard.getContext());
-            if (!hasCustomization(p)) {
-                lastLayoutStatus = "Nenhuma personalização de layout salva";
-                return;
+            if (keyboard instanceof ViewGroup) {
+                initializeLayoutAndColors(keyboard, (ViewGroup) keyboard);
+            } else {
+                applyBlackGrayColors(keyboard);
             }
 
-            // The current root is now known to be active. Reapply after the
-            // current dispatch completes so Gboard can finish processing its touch.
+            SharedPreferences p = prefs(keyboard.getContext());
+            if (!hasCustomization(p)) return;
+
+            // The current root is active. Reapply after this dispatch so Gboard
+            // can finish its own pointer processing before children are moved.
             PENDING_LAYOUT.remove(keyboard);
             scheduleApply(keyboard);
         } catch (Throwable error) {
@@ -192,38 +200,55 @@ public final class GboardCafeRuntime {
             if (!(keyboard instanceof ViewGroup)) return;
             layoutCallbacks++;
             lastKeyboard = new WeakReference<>(keyboard);
-            ViewGroup root = (ViewGroup) keyboard;
-            SharedPreferences p = prefs(keyboard.getContext());
-            String original = p.getString("gboard_cafe_original_rows", null);
-            if (TextUtils.isEmpty(original)) {
-                JSONArray captured = captureRows(root);
-                if (!isPrimaryLayout(captured)) return;
-                String encoded = captured.toString();
-                p.edit().putString("gboard_cafe_original_rows", encoded)
-                        .putString("gboard_cafe_custom_rows", encoded).apply();
+            initializeLayoutAndColors(keyboard, (ViewGroup) keyboard);
+        } catch (Throwable error) {
+            lastLayoutStatus = "Falha no pós-layout: "
+                    + error.getClass().getSimpleName() + ": " + error.getMessage();
+            android.util.Log.e("GboardCafe", lastLayoutStatus, error);
+        }
+    }
+
+    /**
+     * Captures only a real Latin alphabet keyboard, even when Gboard exposes
+     * additional non-letter rows (toolbar/space row) around the three letter rows.
+     * Also retries on first touch because Gboard can reuse a keyboard without
+     * issuing another onLayout callback after switching input types.
+     */
+    private static void initializeLayoutAndColors(View keyboard, ViewGroup root) {
+        SharedPreferences p = prefs(keyboard.getContext());
+        String original = p.getString("gboard_cafe_original_rows", null);
+        if (TextUtils.isEmpty(original)) {
+            JSONArray captured = captureRows(root);
+            if (!isPrimaryLayout(captured)) {
+                lastLayoutStatus = "Aguardando teclado latino completo (26 letras)";
+                applyBlackGrayColors(root);
+                return;
+            }
+            String encoded = captured.toString();
+            p.edit().putString("gboard_cafe_original_rows", encoded)
+                    .putString("gboard_cafe_custom_rows", encoded).apply();
+        } else {
+            migrateLegacyLayout(p, root);
+            JSONArray baseline = parseRows(
+                    p.getString("gboard_cafe_original_rows", null));
+            if (baseline != null) assignStableIds(root, baseline);
+        }
+
+        if (!p.getBoolean(DEFAULT_LAYOUT_PRESET_APPLIED_KEY, false)) {
+            JSONArray baseline = parseRows(
+                    p.getString("gboard_cafe_original_rows", null));
+            JSONArray preset = createDefaultQgfpwLayout(baseline);
+            if (preset != null) {
+                p.edit().putString("gboard_cafe_custom_rows", preset.toString())
+                        .putBoolean(DEFAULT_LAYOUT_PRESET_PENDING_KEY, true).apply();
+                lastLayoutStatus = "Preset QGFPW preparado; aguardando aplicação nas três fileiras";
             } else {
-                migrateLegacyLayout(p, root);
-                JSONArray baseline = parseRows(
-                        p.getString("gboard_cafe_original_rows", null));
-                if (baseline != null) assignStableIds(root, baseline);
+                lastLayoutStatus = "Layout latino detectado, mas as fileiras 10/9/7 não foram confirmadas";
             }
+        }
 
-            // Install this project's keyboard arrangement once, after Gboard's original
-            // key identities have been captured. Existing non-letter keys are retained
-            // at the beginning/end of their original row (for example Shift/Backspace).
-            if (!p.getBoolean(DEFAULT_LAYOUT_PRESET_APPLIED_KEY, false)) {
-                JSONArray baseline = parseRows(
-                        p.getString("gboard_cafe_original_rows", null));
-                JSONArray preset = createDefaultQgfpwLayout(baseline);
-                if (preset != null) {
-                    p.edit().putString("gboard_cafe_custom_rows", preset.toString())
-                            .putBoolean(DEFAULT_LAYOUT_PRESET_APPLIED_KEY, true).apply();
-                    lastLayoutStatus = "Preset Qgfpwjlduh / Arszyneio / Tcxvbkm preparado";
-                }
-            }
-
-            if (hasCustomization(p)) scheduleApply(keyboard);
-        } catch (Throwable ignored) {}
+        applyBlackGrayColors(root);
+        if (hasCustomization(p)) scheduleApply(keyboard);
     }
 
     public static String[] getHiddenKeys(Context context) {
@@ -251,7 +276,9 @@ public final class GboardCafeRuntime {
         try {
             SharedPreferences p = prefs(context);
             String original = p.getString("gboard_cafe_original_rows", null);
-            SharedPreferences.Editor editor = p.edit().remove("gboard_cafe_hidden_keys");
+            SharedPreferences.Editor editor = p.edit().remove("gboard_cafe_hidden_keys")
+                    .putBoolean(DEFAULT_LAYOUT_PRESET_APPLIED_KEY, true)
+                    .remove(DEFAULT_LAYOUT_PRESET_PENDING_KEY);
             if (TextUtils.isEmpty(original)) editor.remove("gboard_cafe_custom_rows");
             else editor.putString("gboard_cafe_custom_rows", original);
             editor.apply();
@@ -271,6 +298,112 @@ public final class GboardCafeRuntime {
             }
         } catch (Throwable ignored) {}
         return false;
+    }
+
+    private static boolean isSingleLatinLetter(String value) {
+        if (value == null || value.length() != 1) return false;
+        char letter = Character.toLowerCase(value.charAt(0));
+        return letter >= 'a' && letter <= 'z';
+    }
+
+    private static boolean isBlackAccentKey(String value) {
+        if (TextUtils.isEmpty(value)) return false;
+        String normalized = value.trim().toLowerCase(java.util.Locale.US);
+        return normalized.equals("?123")
+                || normalized.equals("123")
+                || normalized.contains("shift")
+                || normalized.contains("caps")
+                || normalized.contains("backspace")
+                || normalized.contains("delete")
+                || normalized.contains("enter")
+                || normalized.contains("return")
+                || normalized.contains("done")
+                || normalized.contains("search")
+                || normalized.equals("go")
+                || normalized.equals("send")
+                || normalized.equals("⇧")
+                || normalized.equals("⌫");
+    }
+
+    private static String visibleText(View view) {
+        try {
+            if (view instanceof TextView) {
+                CharSequence text = ((TextView) view).getText();
+                if (!TextUtils.isEmpty(text)) return text.toString();
+            }
+            if (view instanceof ViewGroup) {
+                ViewGroup group = (ViewGroup) view;
+                for (int i = 0; i < group.getChildCount(); i++) {
+                    String text = visibleText(group.getChildAt(i));
+                    if (!TextUtils.isEmpty(text)) return text;
+                }
+            }
+        } catch (Throwable ignored) {}
+        return null;
+    }
+
+    private static String displayLabelForKey(View key) {
+        String visible = visibleText(key);
+        if (!TextUtils.isEmpty(visible)) return visible.trim();
+        return getDisplayLabel(label(key));
+    }
+
+    private static void applyBlackGrayColors(View root) {
+        try {
+            applyBlackGrayColorsRecursive(root);
+        } catch (Throwable ignored) {}
+    }
+
+    private static void applyBlackGrayColorsRecursive(View view) {
+        if (view == null) return;
+        try {
+            if (isKey(view)) {
+                String shown = displayLabelForKey(view);
+                if (isSingleLatinLetter(shown)) {
+                    tintTextLabels(view);
+                } else if (isBlackAccentKey(shown)) {
+                    tintBackgrounds(view);
+                }
+            }
+            if (view instanceof ViewGroup) {
+                ViewGroup group = (ViewGroup) view;
+                for (int i = 0; i < group.getChildCount(); i++) {
+                    applyBlackGrayColorsRecursive(group.getChildAt(i));
+                }
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    private static void tintTextLabels(View view) {
+        try {
+            if (view instanceof TextView) {
+                ((TextView) view).setTextColor(BLACK_GRAY_LABEL);
+            }
+            if (view instanceof ViewGroup) {
+                ViewGroup group = (ViewGroup) view;
+                for (int i = 0; i < group.getChildCount(); i++) {
+                    tintTextLabels(group.getChildAt(i));
+                }
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    private static void tintBackgrounds(View view) {
+        try {
+            Drawable background = view.getBackground();
+            if (background != null) {
+                Drawable tinted = background.mutate();
+                tinted.setColorFilter(BLACK_GRAY_ACCENT, PorterDuff.Mode.SRC_IN);
+                view.setBackground(tinted);
+            }
+            view.invalidate();
+            if (view instanceof ViewGroup) {
+                ViewGroup group = (ViewGroup) view;
+                for (int i = 0; i < group.getChildCount(); i++) {
+                    tintBackgrounds(group.getChildAt(i));
+                }
+            }
+        } catch (Throwable ignored) {}
     }
 
     private static String rawLabel(View view) {
@@ -723,20 +856,23 @@ public final class GboardCafeRuntime {
      * remain native Gboard keys instead of being removed by the custom arrangement.
      */
     private static JSONArray createDefaultQgfpwLayout(JSONArray originalRows) {
-        if (originalRows == null || originalRows.length() != 3) return null;
+        if (originalRows == null || originalRows.length() < 3) return null;
 
         Map<Character, String> letterTokens = new HashMap<>();
+        ArrayList<Integer> letterRowIndexes = new ArrayList<>();
         ArrayList<ArrayList<String>> prefixes = new ArrayList<>();
         ArrayList<ArrayList<String>> suffixes = new ArrayList<>();
+        ArrayList<Integer> letterCounts = new ArrayList<>();
 
         for (int rowIndex = 0; rowIndex < originalRows.length(); rowIndex++) {
             JSONArray sourceRow = originalRows.optJSONArray(rowIndex);
-            if (sourceRow == null || sourceRow.length() < 2) return null;
+            if (sourceRow == null || sourceRow.length() == 0) return null;
 
             ArrayList<String> prefix = new ArrayList<>();
             ArrayList<String> suffix = new ArrayList<>();
             boolean sawLetter = false;
             boolean sawTrailingKey = false;
+            int lettersInRow = 0;
 
             for (int keyIndex = 0; keyIndex < sourceRow.length(); keyIndex++) {
                 String token = sourceRow.optString(keyIndex, "");
@@ -750,10 +886,11 @@ public final class GboardCafeRuntime {
                 }
 
                 if (letter != 0) {
-                    // A non-letter key between letters would make the requested
-                    // fixed 10/9/7 split ambiguous, so leave that target untouched.
+                    // A native modifier between letter keys makes the row mapping
+                    // ambiguous; preserve the stock layout instead of guessing.
                     if (sawTrailingKey || letterTokens.put(letter, token) != null) return null;
                     sawLetter = true;
+                    lettersInRow++;
                 } else if (sawLetter) {
                     sawTrailingKey = true;
                     suffix.add(token);
@@ -761,38 +898,53 @@ public final class GboardCafeRuntime {
                     prefix.add(token);
                 }
             }
+
             prefixes.add(prefix);
             suffixes.add(suffix);
+            if (lettersInRow > 0) {
+                letterRowIndexes.add(rowIndex);
+                letterCounts.add(lettersInRow);
+            }
         }
 
-        if (letterTokens.size() != 26) return null;
+        // Gboard's letter rows are embedded in a larger keyboard tree: modifier,
+        // space, language and action rows can be present too. Only reorder the
+        // three rows whose letter counts are exactly 10, 9 and 7; leave all other
+        // native rows byte-for-byte in their original order.
+        if (letterRowIndexes.size() != 3
+                || letterCounts.get(0) != 10
+                || letterCounts.get(1) != 9
+                || letterCounts.get(2) != 7
+                || letterTokens.size() != 26) return null;
+
         for (char letter = 'a'; letter <= 'z'; letter++) {
             if (!letterTokens.containsKey(letter)) return null;
         }
 
         String[] targetRows = {"qgfpwjlduh", "arszyneio", "tcxvbkm"};
         JSONArray result = new JSONArray();
-        for (int rowIndex = 0; rowIndex < targetRows.length; rowIndex++) {
+        int targetIndex = 0;
+        for (int rowIndex = 0; rowIndex < originalRows.length(); rowIndex++) {
+            int letterRowIndex = letterRowIndexes.indexOf(rowIndex);
+            if (letterRowIndex < 0) {
+                result.put(originalRows.optJSONArray(rowIndex));
+                continue;
+            }
+
             JSONArray target = new JSONArray();
             for (String token : prefixes.get(rowIndex)) target.put(token);
-            for (char letter : targetRows[rowIndex].toCharArray()) {
+            for (char letter : targetRows[targetIndex].toCharArray()) {
                 target.put(letterTokens.get(letter));
             }
             for (String token : suffixes.get(rowIndex)) target.put(token);
             result.put(target);
+            targetIndex++;
         }
         return result;
     }
 
     private static boolean isPrimaryLayout(JSONArray rows) {
-        if (rows == null || rows.length() < 3) return false;
-        int total = 0;
-        for (int i = 0; i < rows.length(); i++) {
-            JSONArray row = rows.optJSONArray(i);
-            if (row == null || row.length() < 2) return false;
-            total += row.length();
-        }
-        return total >= 20;
+        return createDefaultQgfpwLayout(rows) != null;
     }
 
     private static boolean matchesOriginalKeySet(ViewGroup root, JSONArray original) {
@@ -855,6 +1007,21 @@ public final class GboardCafeRuntime {
                             applySavedLayout((ViewGroup) keyboard);
                             keyboard.requestLayout();
                             keyboard.invalidate();
+                        }
+                        applyBlackGrayColors(keyboard);
+                        JSONArray desired = parseRows(
+                                p.getString("gboard_cafe_custom_rows", null));
+                        JSONArray actual = captureRows((ViewGroup) keyboard);
+                        if (p.getBoolean(DEFAULT_LAYOUT_PRESET_PENDING_KEY, false)
+                                && desired != null
+                                && desired.toString().equals(actual.toString())) {
+                            p.edit().putBoolean(DEFAULT_LAYOUT_PRESET_APPLIED_KEY, true)
+                                    .remove(DEFAULT_LAYOUT_PRESET_PENDING_KEY).apply();
+                            lastLayoutStatus = "Preset Qgfpwjlduh / Arszyneio / Tcxvbkm aplicado";
+                            lastAppliedKeyCount = 26;
+                            lastAppliedRowCount = 3;
+                        } else if (p.getBoolean(DEFAULT_LAYOUT_PRESET_PENDING_KEY, false)) {
+                            lastLayoutStatus = "Preset pendente: a ordem ainda não corresponde à captura atual";
                         }
                     }
                 } catch (Throwable ignored) {}
@@ -1064,7 +1231,9 @@ public final class GboardCafeRuntime {
                 }
                 outer.put(inner);
             }
-            prefs(context).edit().putString("gboard_cafe_custom_rows", outer.toString()).apply();
+            prefs(context).edit().putString("gboard_cafe_custom_rows", outer.toString())
+                    .putBoolean(DEFAULT_LAYOUT_PRESET_APPLIED_KEY, true)
+                    .remove(DEFAULT_LAYOUT_PRESET_PENDING_KEY).apply();
             refreshKeyboard();
         } catch (Throwable ignored) {}
     }
