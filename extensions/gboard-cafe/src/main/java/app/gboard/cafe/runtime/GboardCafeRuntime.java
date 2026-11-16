@@ -59,6 +59,12 @@ public final class GboardCafeRuntime {
             "gboard_cafe_low_latency_defaults_migrated_v5";
     private static final int BLACK_GRAY_LABEL = 0xFF3B3B3B;
     private static final int BLACK_GRAY_ACCENT = 0xFF000000;
+    private static final Paint BLACK_KEY_BUBBLE_PAINT = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+    static {
+        BLACK_KEY_BUBBLE_PAINT.setColor(BLACK_GRAY_ACCENT);
+        BLACK_KEY_BUBBLE_PAINT.setStyle(Paint.Style.FILL);
+    }
     private static final WeakHashMap<View, String> STABLE_KEY_IDS = new WeakHashMap<>();
     private static final WeakHashMap<View, EffectDrawable> EFFECTS = new WeakHashMap<>();
     private static final WeakHashMap<View, BoardEffectDrawable> BOARD_EFFECTS = new WeakHashMap<>();
@@ -101,6 +107,31 @@ public final class GboardCafeRuntime {
                     .apply();
             clearActiveEffects();
         } catch (Throwable ignored) {}
+    }
+
+    /**
+     * Draws the native key bubble after Gboard's own onDraw content but before
+     * child labels/icons are dispatched. This covers special keys whose bubble
+     * is rendered directly by Gboard's Canvas painter instead of a Drawable.
+     */
+    public static void drawBlackKeyBubble(View key, Canvas canvas) {
+        try {
+            if (key == null || canvas == null || !isKey(key)) return;
+            float width = key.getWidth();
+            float height = key.getHeight();
+            if (width <= 0f || height <= 0f) return;
+
+            // Preserve a narrow gutter between neighbouring key bubbles.
+            float inset = dp(key, 1f);
+            float right = Math.max(inset, width - inset);
+            float bottom = Math.max(inset, height - inset);
+            float radius = Math.min(dp(key, 5f),
+                    Math.min((right - inset) / 2f, (bottom - inset) / 2f));
+            canvas.drawRoundRect(inset, inset, right, bottom,
+                    radius, radius, BLACK_KEY_BUBBLE_PAINT);
+        } catch (Throwable ignored) {
+            // Recoloring must never interfere with text input or key rendering.
+        }
     }
 
     /** Injected at the start of SoftKeyView.onTouchEvent(MotionEvent). */
