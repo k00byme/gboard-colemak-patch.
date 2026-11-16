@@ -14,6 +14,12 @@ Projeto de patches Morphe que recria no Gboard recursos visuais e de edição in
 
 Os patches de recurso são independentes sempre que tecnicamente possível. São publicados juntos em um único arquivo `.mpp`; Core e Settings Integration são as dependências compartilhadas necessárias.
 
+### Cores completas das teclas (V6)
+
+- O fundo/balão de todas as teclas nativas é recolorido para preto `#000000`.
+- Letras, símbolos, números secundários e glifos desenhados por `TextPaint` usam `#3B3B3B`.
+- O processamento permanece limitado à configuração após o layout; os efeitos continuam desativados por padrão para preservar a resposta ao toque.
+
 ## O que mudou nesta versão
 
 ### Interface e cores
