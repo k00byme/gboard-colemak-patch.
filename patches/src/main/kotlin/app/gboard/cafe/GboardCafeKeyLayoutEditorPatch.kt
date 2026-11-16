@@ -54,7 +54,7 @@ val gboardCafeKeyLayoutEditorPatch = bytecodePatch(
         for (index in drawReturns) {
             drawMethod.addInstructions(
                 index,
-                "invoke-static {p0, p1}, Lapp/gboard/cafe/runtime/GboardCafeRuntime;->drawBlackKeyBubble(Landroid/view/View;Landroid/graphics/Canvas;)V",
+                "invoke-static/range {p0 .. p1}, Lapp/gboard/cafe/runtime/GboardCafeRuntime;->drawBlackKeyBubble(Landroid/view/View;Landroid/graphics/Canvas;)V",
             )
         }
 
