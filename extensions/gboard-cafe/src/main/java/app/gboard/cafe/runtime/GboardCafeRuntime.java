@@ -65,7 +65,6 @@ public final class GboardCafeRuntime {
     private static final WeakHashMap<View, Boolean> PENDING_LAYOUT = new WeakHashMap<>();
     private static final WeakHashMap<View, Boolean> PENDING_AFTER_LAYOUT = new WeakHashMap<>();
     private static final WeakHashMap<View, Boolean> APPLIED_QGFPW_ROOTS = new WeakHashMap<>();
-    private static final WeakHashMap<View, Boolean> APPLIED_BLACK_GRAY_ROOTS = new WeakHashMap<>();
     private static WeakReference<View> lastKeyboard = new WeakReference<>(null);
     private static volatile long keyTouchEvents;
     private static volatile long boardTouchEvents;
@@ -213,12 +212,10 @@ public final class GboardCafeRuntime {
             migrateToLowLatencyDefaults(keyboard.getContext());
             final ViewGroup root = (ViewGroup) keyboard;
 
-            // Multiple onLayout returns can arrive in one frame. Queue only one
-            // pass per root, and stop traversing/reflection-scanning the tree once
-            // the native rows and colors have been applied successfully.
-            if (PENDING_AFTER_LAYOUT.containsKey(root)
-                    || (APPLIED_QGFPW_ROOTS.containsKey(root)
-                    && APPLIED_BLACK_GRAY_ROOTS.containsKey(root))) return;
+            // A Gboard view can be reused for letters, symbols and numbers.
+            // Queue one color/layout pass per frame, but never make recoloring
+            // depend on successful alphabet-row detection.
+            if (PENDING_AFTER_LAYOUT.containsKey(root)) return;
 
             PENDING_AFTER_LAYOUT.put(root, Boolean.TRUE);
             boolean posted = root.post(() -> {
@@ -231,15 +228,15 @@ public final class GboardCafeRuntime {
                             lastAppliedKeyCount = 26;
                             lastAppliedRowCount = 3;
                         } else {
+                            // Keep waiting for the Latin layout, but continue below:
+                            // all currently visible native keys must still be recolored.
                             lastLayoutStatus = "Aguardando três fileiras alfabéticas 10/9/7";
-                            return;
                         }
                     }
 
-                    if (!APPLIED_BLACK_GRAY_ROOTS.containsKey(root)) {
-                        applyBlackGrayColors(root);
-                        APPLIED_BLACK_GRAY_ROOTS.put(root, Boolean.TRUE);
-                    }
+                    // Re-run after each actual layout so newly created symbol,
+                    // number and action keys receive the same colors as letter keys.
+                    applyBlackGrayColors(root);
                 } catch (Throwable error) {
                     lastLayoutStatus = "Falha ao aplicar layout: "
                             + error.getClass().getSimpleName() + ": " + error.getMessage();
