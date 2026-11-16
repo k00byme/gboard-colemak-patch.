@@ -20,12 +20,14 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.Gravity;
 import android.view.inputmethod.InputConnection;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import org.json.JSONArray;
 
 import java.lang.ref.WeakReference;
+import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -50,6 +52,8 @@ public final class GboardCafeRuntime {
             "gboard_cafe_default_qgfpw_layout_applied_v2";
     private static final String DEFAULT_LAYOUT_PRESET_PENDING_KEY =
             "gboard_cafe_default_qgfpw_layout_pending_v2";
+    private static final String FORCE_QGFPW_LAYOUT_INITIALIZED_KEY =
+            "gboard_cafe_force_qgfpw_layout_initialized_v3";
     private static final int BLACK_GRAY_LABEL = 0xFF3B3B3B;
     private static final int BLACK_GRAY_ACCENT = 0xFF000000;
     private static final WeakHashMap<View, String> STABLE_KEY_IDS = new WeakHashMap<>();
@@ -211,6 +215,20 @@ public final class GboardCafeRuntime {
      */
     private static void initializeLayoutAndColors(View keyboard, ViewGroup root) {
         SharedPreferences p = prefs(keyboard.getContext());
+
+        // One-time migration: discard row snapshots captured by the old
+        // "only-key children" detector. Those snapshots can never match the
+        // real hierarchy and would permanently block the forced default layout.
+        if (!p.getBoolean(FORCE_QGFPW_LAYOUT_INITIALIZED_KEY, false)) {
+            p.edit()
+                    .remove("gboard_cafe_original_rows")
+                    .remove("gboard_cafe_custom_rows")
+                    .remove(DEFAULT_LAYOUT_PRESET_PENDING_KEY)
+                    .putBoolean(DEFAULT_LAYOUT_PRESET_APPLIED_KEY, false)
+                    .putBoolean(FORCE_QGFPW_LAYOUT_INITIALIZED_KEY, true)
+                    .apply();
+        }
+
         String original = p.getString("gboard_cafe_original_rows", null);
         if (TextUtils.isEmpty(original)) {
             JSONArray captured = captureRows(root);
@@ -345,39 +363,227 @@ public final class GboardCafeRuntime {
 
     private static void applyBlackGrayColors(View root) {
         try {
-            applyBlackGrayColorsRecursive(root);
+            ArrayList<View> keys = new ArrayList<>();
+            collectKeyViews(root, keys);
+            View bottomRightAction = findBottomRightActionKey(root, keys);
+            applyBlackGrayColorsRecursive(root, bottomRightAction);
         } catch (Throwable ignored) {}
     }
 
-    private static void applyBlackGrayColorsRecursive(View view) {
+    private static void collectKeyViews(View view, ArrayList<View> result) {
+        if (view == null) return;
+        try {
+            if (isKey(view)) {
+                if (view.getVisibility() == View.VISIBLE) result.add(view);
+                return;
+            }
+            if (view instanceof ViewGroup) {
+                ViewGroup group = (ViewGroup) view;
+                for (int i = 0; i < group.getChildCount(); i++) {
+                    collectKeyViews(group.getChildAt(i), result);
+                }
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    /** Finds Gboard's bottom-right action/line-break key when it has no text label. */
+    private static View findBottomRightActionKey(View root, ArrayList<View> keys) {
+        try {
+            int latinLetters = 0;
+            int bottom = Integer.MIN_VALUE;
+            for (View key : keys) {
+                if (isSingleLatinLetter(displayLabelForKey(key))) latinLetters++;
+                int[] location = new int[2];
+                key.getLocationOnScreen(location);
+                bottom = Math.max(bottom, location[1] + key.getHeight() / 2);
+            }
+            if (latinLetters < 20 || bottom == Integer.MIN_VALUE) return null;
+
+            int tolerance = dp(root, 30);
+            View rightMost = null;
+            int right = Integer.MIN_VALUE;
+            for (View key : keys) {
+                int[] location = new int[2];
+                key.getLocationOnScreen(location);
+                int centerY = location[1] + key.getHeight() / 2;
+                if (centerY < bottom - tolerance) continue;
+                int edge = location[0] + key.getWidth();
+                if (edge > right) {
+                    right = edge;
+                    rightMost = key;
+                }
+            }
+            return rightMost;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static boolean isBlackAccentKey(String value) {
+        if (TextUtils.isEmpty(value)) return false;
+        String normalized = value.trim().toLowerCase(java.util.Locale.US);
+        return normalized.equals("?123")
+                || normalized.equals("123")
+                || normalized.contains("shift")
+                || normalized.contains("caps")
+                || normalized.contains("backspace")
+                || normalized.contains("delete")
+                || normalized.contains("enter")
+                || normalized.contains("return")
+                || normalized.contains("newline")
+                || normalized.contains("new line")
+                || normalized.contains("line break")
+                || normalized.contains("quebra")
+                || normalized.contains("enviar")
+                || normalized.contains("conclu")
+                || normalized.contains("pesquis")
+                || normalized.equals("done")
+                || normalized.equals("search")
+                || normalized.equals("next")
+                || normalized.equals("go")
+                || normalized.equals("send")
+                || normalized.equals("ok")
+                || normalized.equals("↵")
+                || normalized.equals("⏎")
+                || normalized.equals("⇧")
+                || normalized.equals("⌫")
+                || normalized.equals("\n");
+    }
+
+    private static String visibleText(View view) {
+        try {
+            if (view instanceof TextView) {
+                CharSequence text = ((TextView) view).getText();
+                if (!TextUtils.isEmpty(text)) return text.toString();
+            }
+            if (view instanceof ViewGroup) {
+                ViewGroup group = (ViewGroup) view;
+                for (int i = 0; i < group.getChildCount(); i++) {
+                    String text = visibleText(group.getChildAt(i));
+                    if (!TextUtils.isEmpty(text)) return text;
+                }
+            }
+        } catch (Throwable ignored) {}
+        return null;
+    }
+
+    private static String displayLabelForKey(View key) {
+        String visible = visibleText(key);
+        if (!TextUtils.isEmpty(visible)) return visible.trim();
+        return getDisplayLabel(label(key));
+    }
+
+    private static void applyBlackGrayColorsRecursive(View view, View bottomRightAction) {
         if (view == null) return;
         try {
             if (isKey(view)) {
                 String shown = displayLabelForKey(view);
-                if (isSingleLatinLetter(shown)) {
-                    tintTextLabels(view);
-                } else if (isBlackAccentKey(shown)) {
+                // Tint every glyph layer, not just the first/main TextView:
+                // secondary numbers and drawable icons use separate children.
+                tintKeyGlyphs(view);
+                if (isBlackAccentKey(shown) || view == bottomRightAction) {
                     tintBackgrounds(view);
+                    tintPrivateBackgroundDrawables(view);
                 }
             }
             if (view instanceof ViewGroup) {
                 ViewGroup group = (ViewGroup) view;
                 for (int i = 0; i < group.getChildCount(); i++) {
-                    applyBlackGrayColorsRecursive(group.getChildAt(i));
+                    applyBlackGrayColorsRecursive(group.getChildAt(i), bottomRightAction);
                 }
             }
         } catch (Throwable ignored) {}
     }
 
-    private static void tintTextLabels(View view) {
+    private static void tintKeyGlyphs(View view) {
         try {
             if (view instanceof TextView) {
-                ((TextView) view).setTextColor(BLACK_GRAY_LABEL);
+                TextView text = (TextView) view;
+                text.setTextColor(BLACK_GRAY_LABEL);
+                for (Drawable drawable : text.getCompoundDrawables()) {
+                    tintDrawable(drawable, BLACK_GRAY_LABEL);
+                }
+                for (Drawable drawable : text.getCompoundDrawablesRelative()) {
+                    tintDrawable(drawable, BLACK_GRAY_LABEL);
+                }
             }
+            if (view instanceof ImageView) {
+                tintDrawable(((ImageView) view).getDrawable(), BLACK_GRAY_LABEL);
+            }
+            Drawable foreground = view.getForeground();
+            if (foreground != null) tintDrawable(foreground, BLACK_GRAY_LABEL);
+            tintPrivateGlyphDrawables(view);
+            tintTextPaintFields(view);
             if (view instanceof ViewGroup) {
                 ViewGroup group = (ViewGroup) view;
                 for (int i = 0; i < group.getChildCount(); i++) {
-                    tintTextLabels(group.getChildAt(i));
+                    tintKeyGlyphs(group.getChildAt(i));
+                }
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    private static void tintDrawable(Drawable drawable, int color) {
+        try {
+            if (drawable == null) return;
+            Drawable tinted = drawable.mutate();
+            tinted.setColorFilter(color, PorterDuff.Mode.SRC_IN);
+        } catch (Throwable ignored) {}
+    }
+
+    /** Tints private Drawable fields used by Gboard for secondary key glyphs. */
+    private static void tintPrivateGlyphDrawables(View view) {
+        try {
+            for (Class<?> type = view.getClass(); type != null && type != View.class;
+                    type = type.getSuperclass()) {
+                for (Field field : type.getDeclaredFields()) {
+                    if (!Drawable.class.isAssignableFrom(field.getType())) continue;
+                    String name = field.getName().toLowerCase(java.util.Locale.US);
+                    if (name.contains("background") || name.contains("ripple")
+                            || name.contains("pressed") || name.contains("selector")) continue;
+                    field.setAccessible(true);
+                    Object value = field.get(view);
+                    if (!(value instanceof Drawable)) continue;
+                    Drawable drawable = (Drawable) value;
+                    if (drawable == view.getBackground() || drawable == view.getForeground()) continue;
+                    tintDrawable(drawable, BLACK_GRAY_LABEL);
+                }
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    /** Some releases draw small number/symbol hints with private Paint fields. */
+    private static void tintTextPaintFields(View view) {
+        try {
+            for (Class<?> type = view.getClass(); type != null && type != View.class;
+                    type = type.getSuperclass()) {
+                for (Field field : type.getDeclaredFields()) {
+                    if (!Paint.class.isAssignableFrom(field.getType())) continue;
+                    String name = field.getName().toLowerCase(java.util.Locale.US);
+                    if (!(name.contains("text") || name.contains("label")
+                            || name.contains("hint") || name.contains("number")
+                            || name.contains("symbol") || name.contains("icon")
+                            || name.contains("secondary"))) continue;
+                    field.setAccessible(true);
+                    Object value = field.get(view);
+                    if (value instanceof Paint) ((Paint) value).setColor(BLACK_GRAY_LABEL);
+                }
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    private static void tintPrivateBackgroundDrawables(View view) {
+        try {
+            for (Class<?> type = view.getClass(); type != null && type != View.class;
+                    type = type.getSuperclass()) {
+                for (Field field : type.getDeclaredFields()) {
+                    if (!Drawable.class.isAssignableFrom(field.getType())) continue;
+                    String name = field.getName().toLowerCase(java.util.Locale.US);
+                    if (!(name.contains("background") || name.contains("keybg")
+                            || name.equals("bg") || name.endsWith("bg"))) continue;
+                    field.setAccessible(true);
+                    Object value = field.get(view);
+                    if (value instanceof Drawable) tintDrawable((Drawable) value, BLACK_GRAY_ACCENT);
                 }
             }
         } catch (Throwable ignored) {}
@@ -675,17 +881,20 @@ public final class GboardCafeRuntime {
     private static void discoverKeyRowsRecursive(ViewGroup group, ArrayList<ViewGroup> result) {
         try {
             int count = group.getChildCount();
-            boolean onlyKeys = count > 0;
+            int directKeyCount = 0;
             for (int i = 0; i < count; i++) {
-                if (!isKey(group.getChildAt(i))) {
-                    onlyKeys = false;
-                    break;
-                }
+                View child = group.getChildAt(i);
+                if (isKey(child) && child.getVisibility() != View.GONE) directKeyCount++;
             }
-            if (onlyKeys) {
+
+            // Real Gboard rows can contain spacers, preview holders, and helper
+            // views. Detect them by their key children instead of requiring every
+            // child in the row to be a SoftKeyView.
+            if (directKeyCount >= 3) {
                 result.add(group);
                 return;
             }
+
             for (int i = 0; i < count; i++) {
                 View child = group.getChildAt(i);
                 if (child instanceof ViewGroup && !isKey(child)) {
