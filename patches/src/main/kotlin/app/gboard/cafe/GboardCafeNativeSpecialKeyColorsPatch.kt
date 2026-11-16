@@ -19,14 +19,30 @@ val gboardCafeNativeSpecialKeyColorsPatch = resourcePatch(
     compatibleWith(gboardCafeCompatibility)
 
     execute {
-        val commonSheet = this["assets/theme/style_sheet_color_common.binarypb", false]
-        val defaultSheet = this["assets/theme/style_sheet_default.binarypb", false]
+        // These are ordinary APK assets, not decoded Android resources.
+        // listApkEntries confirms their archive paths; get(..., copy = true)
+        // extracts their existing bytes into the patch workspace. Passing false
+        // here creates a replacement path without copying the original asset,
+        // which was the cause of the V9 "asset is missing" failure.
+        val commonPath = "assets/theme/style_sheet_color_common.binarypb"
+        val defaultPath = "assets/theme/style_sheet_default.binarypb"
+        val themeEntries = listApkEntries("assets/theme/")
 
-        check(commonSheet.isFile) {
-            "Gboard theme asset is missing: style_sheet_color_common.binarypb"
+        check(commonPath in themeEntries) {
+            "Gboard APK does not contain $commonPath"
         }
-        check(defaultSheet.isFile) {
-            "Gboard theme asset is missing: style_sheet_default.binarypb"
+        check(defaultPath in themeEntries) {
+            "Gboard APK does not contain $defaultPath"
+        }
+
+        val commonSheet = this[commonPath]
+        val defaultSheet = this[defaultPath]
+
+        check(commonSheet.isFile && commonSheet.length() > 0L) {
+            "Could not extract existing Gboard theme asset: $commonPath"
+        }
+        check(defaultSheet.isFile && defaultSheet.length() > 0L) {
+            "Could not extract existing Gboard theme asset: $defaultPath"
         }
 
         val commonTargets = setOf(
