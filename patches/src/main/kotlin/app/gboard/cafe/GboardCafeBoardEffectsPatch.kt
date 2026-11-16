@@ -8,7 +8,8 @@ import app.morphe.patcher.patch.bytecodePatch
 val gboardCafeBoardEffectsPatch = bytecodePatch(
     name = "Board Effects",
     description = "Adds visual effects over the complete keyboard surface.",
-    default = true,
+    // Full-board animations can invalidate the entire keyboard surface.
+    default = false,
 ) {
     compatibleWith(gboardCafeCompatibility)
     dependsOn(gboardCafeSettingsIntegrationPatch)
