@@ -360,7 +360,7 @@ public final class GboardCafeRuntime {
                 if (match >= 0) {
                     rows.get(match).add(key);
                     int size = rows.get(match).size();
-                    rowCenters.set(match, ((rowCenters.get(match).size() - 1) * rowCenters.get(match)
+                    rowCenters.set(match, ((size - 1) * rowCenters.get(match)
                             + centerY) / size);
                 } else {
                     int insertAt = 0;
