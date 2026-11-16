@@ -14,6 +14,14 @@ Projeto de patches Morphe que recria no Gboard recursos visuais e de edição in
 
 Os patches de recurso são independentes sempre que tecnicamente possível. São publicados juntos em um único arquivo `.mpp`; Core e Settings Integration são as dependências compartilhadas necessárias.
 
+### Perfil de baixa latência (V5)
+
+- Os patches de efeitos por tecla e no teclado inteiro ficam desativados por padrão.
+- O editor não injeta mais um hook em cada evento de toque do teclado.
+- O layout QGFPW e as cores são processados uma única vez por instância de teclado, com callbacks de layout duplicados agrupados.
+- A reflexão usada para recolorir ícones/números é limitada à própria tecla nativa, em vez de percorrer cada subview.
+- Na primeira execução após a atualização, as preferências antigas de efeitos são desativadas para evitar animações herdadas.
+
 ## O que mudou nesta versão
 
 ### Interface e cores
