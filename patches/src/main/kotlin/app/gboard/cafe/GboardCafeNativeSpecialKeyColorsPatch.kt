@@ -19,51 +19,71 @@ val gboardCafeNativeSpecialKeyColorsPatch = resourcePatch(
     compatibleWith(gboardCafeCompatibility)
 
     execute {
-        // These are ordinary APK assets, not decoded Android resources.
-        // listApkEntries confirms their archive paths; get(..., copy = true)
-        // extracts their existing bytes into the patch workspace. Passing false
-        // here creates a replacement path without copying the original asset,
-        // which was the cause of the V9 "asset is missing" failure.
-        val commonPath = "assets/theme/style_sheet_color_common.binarypb"
-        val defaultPath = "assets/theme/style_sheet_default.binarypb"
-        val themeEntries = listApkEntries("assets/theme/")
-
-        check(commonPath in themeEntries) {
-            "Gboard APK does not contain $commonPath"
-        }
-        check(defaultPath in themeEntries) {
-            "Gboard APK does not contain $defaultPath"
-        }
-
-        val commonSheet = this[commonPath]
-        val defaultSheet = this[defaultPath]
-
-        check(commonSheet.isFile && commonSheet.length() > 0L) {
-            "Could not extract existing Gboard theme asset: $commonPath"
-        }
-        check(defaultSheet.isFile && defaultSheet.length() > 0L) {
-            "Could not extract existing Gboard theme asset: $defaultPath"
-        }
-
-        val commonTargets = setOf(
-            "default_borderless_space_bar_color",
-            "default_borderless_space_bar_color_pressed",
-        )
-        val defaultTargets = setOf(
-            "default_borderless_space_bar_color_hovered",
+        // Gboard composes its appearance from several binary protobuf stylesheets.
+        // A change to the base/default sheet alone can be overridden by Material 3,
+        // Dynamic Color, and the selected color-pack stylesheet. Patch every sheet
+        // that defines one of the native key-surface variables.
+        val targets = setOf(
             "default_action_key_background_color",
             "default_action_key_background_color_hovered",
             "default_action_key_background_color_pressed",
+            "default_borderless_space_bar_color",
+            "default_borderless_space_bar_color_hovered",
+            "default_borderless_space_bar_color_pressed",
+            "default_bordered_key_color",
+            "default_bordered_key_color_hovered",
+            "default_bordered_key_color_pressed",
+            "default_bordered_key_dark_color",
+            "default_bordered_key_dark_color_hovered",
+            "default_bordered_key_dark_color_pressed",
+            "default_pill_shaped_key_color",
+            "default_pill_shaped_key_color_hovered",
+            "default_pill_shaped_key_color_pressed",
         )
 
-        commonSheet.writeBytes(
-            recolorThemeVariables(commonSheet.readBytes(), commonTargets, "color_common")
-        )
-        defaultSheet.writeBytes(
-            recolorThemeVariables(defaultSheet.readBytes(), defaultTargets, "default")
-        )
+        val themePaths = listApkEntries("assets/theme/")
+            .filter {
+                it.startsWith("assets/theme/style_sheet_") && it.endsWith(".binarypb")
+            }
+        check(themePaths.isNotEmpty()) {
+            "No Gboard theme stylesheets were found in assets/theme/."
+        }
 
-        println("[Gboard Cafe] Native spacebar and action-key theme variables set to #000000.")
+        val updatedNames = LinkedHashSet<String>()
+        var changedSheets = 0
+
+        for (path in themePaths) {
+            // The default copy=true extracts the original APK asset before editing it.
+            val asset = this[path]
+            check(asset.isFile) {
+                "Could not extract Gboard theme asset: " + path
+            }
+
+            val result = recolorThemeVariables(asset.readBytes(), targets)
+            if (result.second.isNotEmpty()) {
+                asset.writeBytes(result.first)
+                updatedNames.addAll(result.second)
+                changedSheets++
+            }
+        }
+
+        val required = setOf(
+            "default_action_key_background_color",
+            "default_borderless_space_bar_color",
+            "default_bordered_key_color",
+            "default_bordered_key_dark_color",
+            "default_pill_shaped_key_color",
+        )
+        val missing = required - updatedNames
+        check(missing.isEmpty()) {
+            "Gboard theme stylesheets are missing required key colors: " + missing.joinToString()
+        }
+
+        println(
+            "[Gboard Cafe] Set native key surfaces to #000000 in " +
+                changedSheets + " theme stylesheets; variables updated: " +
+                updatedNames.size
+        )
     }
 }
 
@@ -203,8 +223,7 @@ private fun blackGboardProtoColorField(): ByteArray {
 private fun recolorThemeVariables(
     sheet: ByteArray,
     requestedNames: Set<String>,
-    sheetLabel: String,
-): ByteArray {
+): Pair<ByteArray, Set<String>> {
     val output = ByteArrayOutputStream()
     val updated = LinkedHashSet<String>()
     val blackColorField = blackGboardProtoColorField()
@@ -227,30 +246,20 @@ private fun recolorThemeVariables(
         }
 
         val rewrittenRecord = ByteArrayOutputStream()
-        var insertedColor = false
-
+        // For this key-surface patch, remove the literal/alias/overlay fields
+        // (2, 3 and 5) and replace them with a single opaque black ARGB value.
+        // Keeping a theme's pressed/hovered interpolation field would allow it
+        // to blend the new value back toward the old gray/blue color.
         for (field in fields) {
-            // Field 2 stores a literal color; field 3 stores an alias to another
-            // variable. Replace either representation with a literal ARGB value.
-            if (field.number == 2 || field.number == 3) {
-                if (!insertedColor) {
-                    rewrittenRecord.write(blackColorField)
-                    insertedColor = true
-                }
-            } else {
+            if (field.number != 2 && field.number != 3 && field.number != 5) {
                 rewrittenRecord.write(field.raw)
             }
         }
+        rewrittenRecord.write(blackColorField)
 
-        if (!insertedColor) rewrittenRecord.write(blackColorField)
         output.write(encodeGboardProtoField(entry.number, 2, rewrittenRecord.toByteArray()))
         updated.add(variableName!!)
     }
 
-    val missing = requestedNames - updated
-    check(missing.isEmpty()) {
-        "Gboard $sheetLabel stylesheet did not contain expected variables: ${missing.joinToString()}"
-    }
-
-    return output.toByteArray()
+    return output.toByteArray() to updated
 }
