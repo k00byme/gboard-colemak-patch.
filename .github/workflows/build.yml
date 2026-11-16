@@ -2,7 +2,7 @@ name: Build Gboard QGFPW Black Gray Morphe patch
 
 on:
   push:
-    branches: [main]
+    branches: [main, fix/native-theme-special-key-colors]
   pull_request:
   workflow_dispatch:
 
