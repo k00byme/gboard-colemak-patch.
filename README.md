@@ -93,6 +93,8 @@ As cores também fazem parte do runtime incluído no mesmo bundle Morphe: rótul
 
 A instalação usa um único arquivo `.mpp`. O preset só é marcado como aplicado depois de comparar a ordem salva com a ordem efetivamente encontrada na árvore do teclado; se a aplicação falhar, o runtime tenta novamente no próximo layout/toque.
 
+A revisão v3 também detecta fileiras com filhos auxiliares, força uma migração única do layout anterior e tenta recolorir ícones/números secundários além dos rótulos principais.
+
 ## Licença e marcas
 
 Projeto independente, sem afiliação com Samsung ou Google. Não redistribui os APKs enviados para análise.
