@@ -96,3 +96,8 @@ A instalação usa um único arquivo `.mpp`. O preset só é marcado como aplica
 ## Licença e marcas
 
 Projeto independente, sem afiliação com Samsung ou Google. Não redistribui os APKs enviados para análise.
+
+
+### Revisão v4
+
+A ordem padrão é aplicada sobre as 26 teclas nativas agrupadas pela posição real na tela. O hook de toque não percorre nem reorganiza a árvore do teclado; a rotina roda após o layout para evitar atraso ao digitar.
