@@ -19,28 +19,11 @@ val gboardCafeNativeSpecialKeyColorsPatch = resourcePatch(
     compatibleWith(gboardCafeCompatibility)
 
     execute {
-        // Gboard composes its appearance from several binary protobuf stylesheets.
-        // A change to the base/default sheet alone can be overridden by Material 3,
-        // Dynamic Color, and the selected color-pack stylesheet. Patch every sheet
-        // that defines one of the native key-surface variables.
-        val targets = setOf(
-            "default_action_key_background_color",
-            "default_action_key_background_color_hovered",
-            "default_action_key_background_color_pressed",
-            "default_borderless_space_bar_color",
-            "default_borderless_space_bar_color_hovered",
-            "default_borderless_space_bar_color_pressed",
-            "default_bordered_key_color",
-            "default_bordered_key_color_hovered",
-            "default_bordered_key_color_pressed",
-            "default_bordered_key_dark_color",
-            "default_bordered_key_dark_color_hovered",
-            "default_bordered_key_dark_color_pressed",
-            "default_pill_shaped_key_color",
-            "default_pill_shaped_key_color_hovered",
-            "default_pill_shaped_key_color_pressed",
-        )
-
+        // The gradient background is not a key color: Gboard applies it through
+        // separate .keyboard-background CSS rules. Remove those rules from the
+        // gradient and user-image overlays, then make every keyboard surface
+        // palette resolve to opaque black. Leave action-key and spacebar colors
+        // untouched so the user's selected key theme controls those three keys.
         val themePaths = listApkEntries("assets/theme/")
             .filter {
                 it.startsWith("assets/theme/style_sheet_") && it.endsWith(".binarypb")
@@ -49,42 +32,107 @@ val gboardCafeNativeSpecialKeyColorsPatch = resourcePatch(
             "No Gboard theme stylesheets were found in assets/theme/."
         }
 
+        val backgroundTargets = setOf(
+            "default_keyboard_background_primary_color",
+            "default_keyboard_background_secondary_color",
+            "default_keyboard_background_header_color",
+        )
+
         val updatedNames = LinkedHashSet<String>()
-        var changedSheets = 0
+        var changedColorSheets = 0
+        var clearedBackgroundSheets = 0
+
+        val overlaysToFlatten = setOf(
+            "assets/theme/style_sheet_gradient_dark_override.binarypb",
+            "assets/theme/style_sheet_gradient_light_override.binarypb",
+            "assets/theme/style_sheet_landscape_user_image_override.binarypb",
+            "assets/theme/style_sheet_dynamic_color_rules.binarypb",
+        )
 
         for (path in themePaths) {
-            // The default copy=true extracts the original APK asset before editing it.
+            // Default copy=true extracts the original APK asset before editing.
             val asset = this[path]
-            check(asset.isFile) {
+            check(asset.isFile && asset.length() > 0L) {
                 "Could not extract Gboard theme asset: " + path
             }
 
-            val result = recolorThemeVariables(asset.readBytes(), targets)
-            if (result.second.isNotEmpty()) {
-                asset.writeBytes(result.first)
-                updatedNames.addAll(result.second)
-                changedSheets++
+            val original = asset.readBytes()
+            var updated = original
+            var changed = false
+
+            if (path in overlaysToFlatten) {
+                val flattened = removeKeyboardBackgroundOverrideRules(updated)
+                if (flattened.second > 0) {
+                    updated = flattened.first
+                    clearedBackgroundSheets += 1
+                    changed = true
+                }
             }
+
+            val recolored = recolorThemeVariables(updated, backgroundTargets)
+            if (recolored.second.isNotEmpty()) {
+                updated = recolored.first
+                updatedNames.addAll(recolored.second)
+                changedColorSheets += 1
+                changed = true
+            }
+
+            if (changed) asset.writeBytes(updated)
         }
 
-        val required = setOf(
-            "default_action_key_background_color",
-            "default_borderless_space_bar_color",
-            "default_bordered_key_color",
-            "default_bordered_key_dark_color",
-            "default_pill_shaped_key_color",
-        )
-        val missing = required - updatedNames
+        val missing = backgroundTargets - updatedNames
         check(missing.isEmpty()) {
-            "Gboard theme stylesheets are missing required key colors: " + missing.joinToString()
+            "Gboard theme stylesheets are missing keyboard background colors: " +
+                missing.joinToString()
+        }
+
+        check(clearedBackgroundSheets >= 3) {
+            "Expected gradient/image keyboard background overrides were not found."
         }
 
         println(
-            "[Gboard Cafe] Set native key surfaces to #000000 in " +
-                changedSheets + " theme stylesheets; variables updated: " +
-                updatedNames.size
+            "[Gboard Cafe] Keyboard surface forced to #000000; updated " +
+                updatedNames.size + " background variables across " +
+                changedColorSheets + " stylesheets and removed background " +
+                "overlays from " + clearedBackgroundSheets + " stylesheets."
         )
     }
+}
+
+/**
+ * Removes only whole-keyboard background/image/gradient rules from overlay
+ * stylesheets. Other rules in the same asset, especially key-specific styling,
+ * are preserved verbatim.
+ */
+private fun removeKeyboardBackgroundOverrideRules(sheet: ByteArray): Pair<ByteArray, Int> {
+    val output = ByteArrayOutputStream()
+    var removed = 0
+
+    for (entry in readGboardProtoFields(sheet)) {
+        if (entry.number != 1 || entry.wireType != 2 || entry.bytesValue == null) {
+            output.write(entry.raw)
+            continue
+        }
+
+        val selectors = readGboardProtoFields(entry.bytesValue)
+            .filter { it.number == 1 && it.wireType == 2 && it.bytesValue != null }
+            .map { it.bytesValue!!.toString(StandardCharsets.UTF_8) }
+
+        val isKeyboardSurfaceRule = selectors.any { selector ->
+            selector == ".keyboard-background" ||
+                selector == ".widget-keyboard.keyboard-background" ||
+                selector.startsWith(".widget-keyboard.keyboard-background.") ||
+                selector == ".keyboard-background.for-preview"
+        }
+
+        if (isKeyboardSurfaceRule) {
+            removed++
+        } else {
+            output.write(entry.raw)
+        }
+    }
+
+    return output.toByteArray() to removed
 }
 
 private const val SPECIAL_KEY_BLACK_ARGB = 0xFF000000L
