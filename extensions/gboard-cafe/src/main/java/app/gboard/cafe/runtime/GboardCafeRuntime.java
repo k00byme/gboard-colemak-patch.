@@ -60,6 +60,9 @@ public final class GboardCafeRuntime {
     private static final WeakHashMap<View, EffectDrawable> EFFECTS = new WeakHashMap<>();
     private static final WeakHashMap<View, BoardEffectDrawable> BOARD_EFFECTS = new WeakHashMap<>();
     private static final WeakHashMap<View, Boolean> PENDING_LAYOUT = new WeakHashMap<>();
+    private static final WeakHashMap<View, Boolean> PENDING_AFTER_LAYOUT = new WeakHashMap<>();
+    private static final WeakHashMap<View, Boolean> APPLIED_QGFPW_ROOTS = new WeakHashMap<>();
+    private static final WeakHashMap<View, Boolean> APPLIED_BLACK_GRAY_ROOTS = new WeakHashMap<>();
     private static WeakReference<View> lastKeyboard = new WeakReference<>(null);
     private static volatile long keyTouchEvents;
     private static volatile long boardTouchEvents;
@@ -186,24 +189,41 @@ public final class GboardCafeRuntime {
             layoutCallbacks++;
             lastKeyboard = new WeakReference<>(keyboard);
             final ViewGroup root = (ViewGroup) keyboard;
-            // Run after Gboard finishes its own layout pass. The forced layout
-            // logic works from the live positions of the 26 native letter keys.
-            root.post(() -> {
+
+            // Multiple onLayout returns can arrive in one frame. Queue only one
+            // pass per root, and stop traversing/reflection-scanning the tree once
+            // the native rows and colors have been applied successfully.
+            if (PENDING_AFTER_LAYOUT.containsKey(root)
+                    || (APPLIED_QGFPW_ROOTS.containsKey(root)
+                    && APPLIED_BLACK_GRAY_ROOTS.containsKey(root))) return;
+
+            PENDING_AFTER_LAYOUT.put(root, Boolean.TRUE);
+            boolean posted = root.post(() -> {
+                PENDING_AFTER_LAYOUT.remove(root);
                 try {
-                    if (applyForcedQgfpwLayout(root)) {
-                        lastLayoutStatus = "Preset Qgfpwjlduh / Arszyneio / Tcxvbkm aplicado diretamente";
-                        lastAppliedKeyCount = 26;
-                        lastAppliedRowCount = 3;
-                    } else {
-                        lastLayoutStatus = "Aguardando três fileiras alfabéticas 10/9/7";
+                    if (!APPLIED_QGFPW_ROOTS.containsKey(root)) {
+                        if (applyForcedQgfpwLayout(root)) {
+                            APPLIED_QGFPW_ROOTS.put(root, Boolean.TRUE);
+                            lastLayoutStatus = "Preset Qgfpwjlduh / Arszyneio / Tcxvbkm aplicado diretamente";
+                            lastAppliedKeyCount = 26;
+                            lastAppliedRowCount = 3;
+                        } else {
+                            lastLayoutStatus = "Aguardando três fileiras alfabéticas 10/9/7";
+                            return;
+                        }
                     }
-                    applyBlackGrayColors(root);
+
+                    if (!APPLIED_BLACK_GRAY_ROOTS.containsKey(root)) {
+                        applyBlackGrayColors(root);
+                        APPLIED_BLACK_GRAY_ROOTS.put(root, Boolean.TRUE);
+                    }
                 } catch (Throwable error) {
                     lastLayoutStatus = "Falha ao aplicar layout: "
                             + error.getClass().getSimpleName() + ": " + error.getMessage();
                     android.util.Log.e("GboardCafe", lastLayoutStatus, error);
                 }
             });
+            if (!posted) PENDING_AFTER_LAYOUT.remove(root);
         } catch (Throwable error) {
             lastLayoutStatus = "Falha no pós-layout: "
                     + error.getClass().getSimpleName() + ": " + error.getMessage();
@@ -587,6 +607,14 @@ public final class GboardCafeRuntime {
 
     private static void tintKeyGlyphs(View view) {
         try {
+            // Reflection is useful only on the native SoftKeyView itself.
+            // Scanning every nested label/icon child repeatedly was unnecessary
+            // work on every layout pass and could contribute to keyboard jank.
+            if (isKey(view)) {
+                tintPrivateGlyphDrawables(view);
+                tintTextPaintFields(view);
+            }
+
             if (view instanceof TextView) {
                 TextView text = (TextView) view;
                 text.setTextColor(BLACK_GRAY_LABEL);
@@ -602,8 +630,6 @@ public final class GboardCafeRuntime {
             }
             Drawable foreground = view.getForeground();
             if (foreground != null) tintDrawable(foreground, BLACK_GRAY_LABEL);
-            tintPrivateGlyphDrawables(view);
-            tintTextPaintFields(view);
             if (view instanceof ViewGroup) {
                 ViewGroup group = (ViewGroup) view;
                 for (int i = 0; i < group.getChildCount(); i++) {
