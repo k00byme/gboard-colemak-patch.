@@ -1,4 +1,4 @@
-name: Build Gboard Cafe Morphe patches
+name: Build Gboard QGFPW Black Gray Morphe patch
 
 on:
   push:
@@ -22,23 +22,15 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "9.8.2"
-      - name: Build Morphe patch bundle
+      - name: Build integrated Morphe patch bundle
         run: gradle :patches:buildAndroid --no-daemon
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_ACTOR: ${{ github.actor }}
-      - name: Package Black Gray custom theme
-        run: |
-          mkdir -p dist
-          cd theme/black-gray
-          zip -q -9 "$GITHUB_WORKSPACE/dist/Gboard_Black_Gray_Custom_Theme.zip" \
-            metadata.json colors.css style_sheet_md2.css style_sheet_md2_border.css
-      - name: Upload .mpp bundle and custom theme
+      - name: Upload the single .mpp bundle
         uses: actions/upload-artifact@v4
         with:
-          name: gboard-cafe-morphe-patches
-          path: |
-            patches/build/libs/*.mpp
-            dist/Gboard_Black_Gray_Custom_Theme.zip
+          name: gboard-qgfpw-black-gray-mpp
+          path: patches/build/libs/*.mpp
           if-no-files-found: error
           retention-days: 14
