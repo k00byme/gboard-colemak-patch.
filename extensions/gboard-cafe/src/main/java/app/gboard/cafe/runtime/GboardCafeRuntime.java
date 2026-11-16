@@ -54,6 +54,8 @@ public final class GboardCafeRuntime {
             "gboard_cafe_default_qgfpw_layout_pending_v2";
     private static final String FORCE_QGFPW_LAYOUT_INITIALIZED_KEY =
             "gboard_cafe_force_qgfpw_layout_initialized_v3";
+    private static final String LOW_LATENCY_DEFAULTS_MIGRATED_KEY =
+            "gboard_cafe_low_latency_defaults_migrated_v5";
     private static final int BLACK_GRAY_LABEL = 0xFF3B3B3B;
     private static final int BLACK_GRAY_ACCENT = 0xFF000000;
     private static final WeakHashMap<View, String> STABLE_KEY_IDS = new WeakHashMap<>();
@@ -80,6 +82,25 @@ public final class GboardCafeRuntime {
     private static SharedPreferences prefs(Context context) {
         return context.getSharedPreferences(
                 context.getPackageName() + "_preferences", Context.MODE_PRIVATE);
+    }
+
+    /**
+     * V5 prioritizes typing latency over decorative animations. Clear any
+     * previously saved effect toggle once after upgrade; users can still opt
+     * into the optional effect patches separately.
+     */
+    private static void migrateToLowLatencyDefaults(Context context) {
+        try {
+            SharedPreferences p = prefs(context);
+            if (p.getBoolean(LOW_LATENCY_DEFAULTS_MIGRATED_KEY, false)) return;
+            p.edit()
+                    .putBoolean("gboard_cafe_enabled", false)
+                    .putString("gboard_cafe_effect", "none")
+                    .putString("gboard_cafe_board_effect", "none")
+                    .putBoolean(LOW_LATENCY_DEFAULTS_MIGRATED_KEY, true)
+                    .apply();
+            clearActiveEffects();
+        } catch (Throwable ignored) {}
     }
 
     /** Injected at the start of SoftKeyView.onTouchEvent(MotionEvent). */
@@ -188,6 +209,7 @@ public final class GboardCafeRuntime {
             if (!(keyboard instanceof ViewGroup)) return;
             layoutCallbacks++;
             lastKeyboard = new WeakReference<>(keyboard);
+            migrateToLowLatencyDefaults(keyboard.getContext());
             final ViewGroup root = (ViewGroup) keyboard;
 
             // Multiple onLayout returns can arrive in one frame. Queue only one
