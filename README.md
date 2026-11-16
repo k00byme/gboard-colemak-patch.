@@ -79,9 +79,9 @@ A correção adiciona `-dontobfuscate` e regras keep específicas à extensão, 
 
 O GitHub Actions gera um único bundle `.mpp`. Build bem-sucedido confirma compilação, não prova instalação nem comportamento em aparelho. O critério para uma versão testada é aplicar os patches no Gboard 18.5.4, instalar no Galaxy A15 e testar a tela, animações, arrastar/soltar, teclas personalizadas, persistência e restauração.
 
-## Preset QGFPW e tema Black Gray
+## Preset QGFPW + Black Gray (integrados no mesmo .mpp)
 
-Na primeira captura válida do teclado latino, o patch aplica uma vez este arranjo:
+O patch aplica automaticamente o layout às três fileiras alfabéticas, preservando as demais fileiras nativas e as teclas de função:
 
 ```text
 Qgfpwjlduh
@@ -89,9 +89,9 @@ Arszyneio
 Tcxvbkm
 ```
 
-As teclas nativas que não são letras — como Shift e Backspace — permanecem nas extremidades da própria fileira. Depois dessa aplicação inicial, as alterações feitas no editor e a opção de restaurar o layout original continuam sob controle do usuário.
+As cores também fazem parte do runtime incluído no mesmo bundle Morphe: rótulos das letras em `#3B3B3B` e fundos das teclas de ação azuis (Shift, Backspace, Enter e teclas de função identificadas) em `#000000`. Não é necessário importar um tema ZIP separado.
 
-O build também publica `Gboard_Black_Gray_Custom_Theme.zip`: tema claro com letras e ícones em `#3B3B3B` e teclas de ação/acento em `#000000`. O tema é um arquivo separado porque o Gboard importa temas pelo menu **Tema**; ele não é aplicado automaticamente pelo Morphe. Para importá-lo, o Gboard precisa ter um importador de temas personalizados habilitado.
+A instalação usa um único arquivo `.mpp`. O preset só é marcado como aplicado depois de comparar a ordem salva com a ordem efetivamente encontrada na árvore do teclado; se a aplicação falhar, o runtime tenta novamente no próximo layout/toque.
 
 ## Licença e marcas
 
