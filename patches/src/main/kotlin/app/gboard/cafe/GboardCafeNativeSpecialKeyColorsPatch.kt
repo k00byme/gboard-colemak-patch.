@@ -5,15 +5,13 @@ import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
 
 /**
- * Applies Gboard's own theme variables for the two special-key families that
- * are not consistently represented by ordinary View background Drawables.
- *
- * The exact target build is pinned by gboardCafeCompatibility. No drawing or
- * touch hooks are added: Gboard's stylesheet engine paints these key surfaces.
+ * Forces the entire keyboard surface to solid black by neutralizing gradient
+ * and image background overlays and recoloring the native surface variables.
+ * Key-specific colors remain under the user's selected Gboard theme.
  */
 val gboardCafeNativeSpecialKeyColorsPatch = resourcePatch(
-    name = "Native Spacebar and Action-Key Colors",
-    description = "Sets native spacebar and action-key backgrounds to #000000.",
+    name = "Solid Black Keyboard Background",
+    description = "Removes gradient keyboard-surface overlays and makes the entire keyboard background #000000.",
     default = true,
 ) {
     compatibleWith(gboardCafeCompatibility)
