@@ -419,60 +419,6 @@ public final class GboardCafeRuntime {
         }
     }
 
-    private static boolean isBlackAccentKey(String value) {
-        if (TextUtils.isEmpty(value)) return false;
-        String normalized = value.trim().toLowerCase(java.util.Locale.US);
-        return normalized.equals("?123")
-                || normalized.equals("123")
-                || normalized.contains("shift")
-                || normalized.contains("caps")
-                || normalized.contains("backspace")
-                || normalized.contains("delete")
-                || normalized.contains("enter")
-                || normalized.contains("return")
-                || normalized.contains("newline")
-                || normalized.contains("new line")
-                || normalized.contains("line break")
-                || normalized.contains("quebra")
-                || normalized.contains("enviar")
-                || normalized.contains("conclu")
-                || normalized.contains("pesquis")
-                || normalized.equals("done")
-                || normalized.equals("search")
-                || normalized.equals("next")
-                || normalized.equals("go")
-                || normalized.equals("send")
-                || normalized.equals("ok")
-                || normalized.equals("↵")
-                || normalized.equals("⏎")
-                || normalized.equals("⇧")
-                || normalized.equals("⌫")
-                || normalized.equals("\n");
-    }
-
-    private static String visibleText(View view) {
-        try {
-            if (view instanceof TextView) {
-                CharSequence text = ((TextView) view).getText();
-                if (!TextUtils.isEmpty(text)) return text.toString();
-            }
-            if (view instanceof ViewGroup) {
-                ViewGroup group = (ViewGroup) view;
-                for (int i = 0; i < group.getChildCount(); i++) {
-                    String text = visibleText(group.getChildAt(i));
-                    if (!TextUtils.isEmpty(text)) return text;
-                }
-            }
-        } catch (Throwable ignored) {}
-        return null;
-    }
-
-    private static String displayLabelForKey(View key) {
-        String visible = visibleText(key);
-        if (!TextUtils.isEmpty(visible)) return visible.trim();
-        return getDisplayLabel(label(key));
-    }
-
     private static void applyBlackGrayColorsRecursive(View view, View bottomRightAction) {
         if (view == null) return;
         try {
