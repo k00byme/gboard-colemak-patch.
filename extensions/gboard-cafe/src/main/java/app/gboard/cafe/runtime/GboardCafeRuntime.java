@@ -122,13 +122,8 @@ public final class GboardCafeRuntime {
                 applyBlackGrayColors(keyboard);
             }
 
-            SharedPreferences p = prefs(keyboard.getContext());
-            if (!hasCustomization(p)) return;
-
-            // The current root is active. Reapply after this dispatch so Gboard
-            // can finish its own pointer processing before children are moved.
-            PENDING_LAYOUT.remove(keyboard);
-            scheduleApply(keyboard);
+            // initializeLayoutAndColors already schedules any required layout
+            // move. Do not post a second competing apply from the same touch.
         } catch (Throwable error) {
             lastLayoutStatus = "Hook de toque/layout falhou: "
                     + error.getClass().getSimpleName() + ": " + error.getMessage();
