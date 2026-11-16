@@ -7,8 +7,8 @@ import com.android.tools.smali.dexlib2.Opcode
 
 /** Captures and reapplies the user's editable key arrangement. */
 val gboardCafeKeyLayoutEditorPatch = bytecodePatch(
-    name = "Key Layout Editor",
-    description = "Enables persistent key reordering and installs the QGFPW default layout on first capture.",
+    name = "QGFPW Layout + Black Gray Colors",
+    description = "Applies Qgfpwjlduh / Arszyneio / Tcxvbkm and recolors letter labels #3B3B3B and blue action keys #000000.",
     default = true,
 ) {
     compatibleWith(gboardCafeCompatibility)
