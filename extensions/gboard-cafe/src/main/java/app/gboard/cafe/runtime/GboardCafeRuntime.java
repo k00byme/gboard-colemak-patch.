@@ -234,9 +234,9 @@ public final class GboardCafeRuntime {
                         }
                     }
 
-                    // Correct only the L key's size using its immediate row neighbour.
-                    // Do not rebalance the row or modify any other letter.
-                    correctLKeyWidth(root);
+                    // Correct only the L and O keys when they inherit edge-slot sizing.
+                    // Use same-row neighbours; leave all other letter parameters untouched.
+                    correctEdgeLetterWidths(root);
 
                     // Replace the selected theme's full-surface background after Gboard
                     // lays it out. Key views are excluded, so the active theme still owns
@@ -1552,46 +1552,60 @@ public final class GboardCafeRuntime {
      * nearest Latin-letter sibling in L's own row container. Only L's width,
      * weight and horizontal margins are copied. No other key or row is changed.
      */
-    private static void correctLKeyWidth(ViewGroup root) {
+    /**
+     * Normalizes only the two letters that can inherit unusual edge-slot sizing
+     * after the native QWERTY views are rearranged:
+     * - L is compared with G in the first row.
+     * - O is compared with I in the second row.
+     *
+     * Every other key keeps its existing LayoutParams.
+     */
+    private static void correctEdgeLetterWidths(ViewGroup root) {
+        correctLetterWidth(root, 'l', 'g');
+        correctLetterWidth(root, 'o', 'i');
+    }
+
+    private static void correctLetterWidth(
+            ViewGroup root, char targetLetter, char preferredLetter) {
         try {
             ArrayList<View> keys = new ArrayList<>();
             collectKeyViews(root, keys);
 
-            View lKey = null;
-            View gKey = null;
+            View targetKey = null;
+            View preferredKey = null;
             for (View key : keys) {
                 String shown = displayLabelForKey(key);
                 if (!isSingleLatinLetter(shown)) continue;
                 char letter = Character.toLowerCase(shown.charAt(0));
-                if (letter == 'l' && lKey == null) lKey = key;
-                else if (letter == 'g' && gKey == null) gKey = key;
+                if (letter == targetLetter && targetKey == null) targetKey = key;
+                else if (letter == preferredLetter && preferredKey == null) preferredKey = key;
             }
-            if (lKey == null || !(lKey.getParent() instanceof ViewGroup)) return;
+            if (targetKey == null || !(targetKey.getParent() instanceof ViewGroup)) return;
 
-            ViewGroup parent = (ViewGroup) lKey.getParent();
-            View reference = gKey != null && gKey.getParent() == parent ? gKey : null;
-            int[] lLocation = new int[2];
-            lKey.getLocationOnScreen(lLocation);
-            int lCenterY = lLocation[1] + lKey.getHeight() / 2;
-            int lCenterX = lLocation[0] + lKey.getWidth() / 2;
+            ViewGroup parent = (ViewGroup) targetKey.getParent();
+            View reference = preferredKey != null && preferredKey.getParent() == parent
+                    ? preferredKey : null;
+            int[] targetLocation = new int[2];
+            targetKey.getLocationOnScreen(targetLocation);
+            int targetCenterY = targetLocation[1] + targetKey.getHeight() / 2;
+            int targetCenterX = targetLocation[0] + targetKey.getWidth() / 2;
             int rowTolerance = dp(root, 16);
 
-            // First search the direct row container. This avoids crossing layout
-            // groups when Gboard uses per-row wrappers.
+            // Prefer a peer in the same immediate row container.
             if (reference == null) {
                 int bestDistance = Integer.MAX_VALUE;
                 for (int i = 0; i < parent.getChildCount(); i++) {
                     View candidate = parent.getChildAt(i);
-                    if (candidate == lKey || !isKey(candidate)) continue;
+                    if (candidate == targetKey || !isKey(candidate)) continue;
                     if (!isSingleLatinLetter(displayLabelForKey(candidate))) continue;
 
                     int[] location = new int[2];
                     candidate.getLocationOnScreen(location);
                     int centerY = location[1] + candidate.getHeight() / 2;
-                    if (Math.abs(centerY - lCenterY) > rowTolerance) continue;
+                    if (Math.abs(centerY - targetCenterY) > rowTolerance) continue;
 
                     int centerX = location[0] + candidate.getWidth() / 2;
-                    int distance = Math.abs(centerX - lCenterX);
+                    int distance = Math.abs(centerX - targetCenterX);
                     if (distance < bestDistance) {
                         bestDistance = distance;
                         reference = candidate;
@@ -1599,28 +1613,29 @@ public final class GboardCafeRuntime {
                 }
             }
 
-            // If L is wrapped alone, use the nearest letter in the same visual row.
-            // Only accept a peer with the same LayoutParams type and parent type.
+            // Some Gboard versions wrap each key separately. In that case,
+            // find the nearest letter in the same visual row and equivalent
+            // container/LayoutParams types.
             if (reference == null) {
                 int bestDistance = Integer.MAX_VALUE;
                 for (View candidate : keys) {
-                    if (candidate == lKey
+                    if (candidate == targetKey
                             || !isSingleLatinLetter(displayLabelForKey(candidate))
                             || !(candidate.getParent() instanceof ViewGroup)) continue;
                     ViewGroup candidateParent = (ViewGroup) candidate.getParent();
                     if (candidateParent.getClass() != parent.getClass()) continue;
                     ViewGroup.LayoutParams candidateParams = candidate.getLayoutParams();
-                    ViewGroup.LayoutParams lParams = lKey.getLayoutParams();
-                    if (candidateParams == null || lParams == null
-                            || candidateParams.getClass() != lParams.getClass()) continue;
+                    ViewGroup.LayoutParams targetParams = targetKey.getLayoutParams();
+                    if (candidateParams == null || targetParams == null
+                            || candidateParams.getClass() != targetParams.getClass()) continue;
 
                     int[] location = new int[2];
                     candidate.getLocationOnScreen(location);
                     int centerY = location[1] + candidate.getHeight() / 2;
-                    if (Math.abs(centerY - lCenterY) > rowTolerance) continue;
+                    if (Math.abs(centerY - targetCenterY) > rowTolerance) continue;
 
                     int centerX = location[0] + candidate.getWidth() / 2;
-                    int distance = Math.abs(centerX - lCenterX);
+                    int distance = Math.abs(centerX - targetCenterX);
                     if (distance < bestDistance) {
                         bestDistance = distance;
                         reference = candidate;
@@ -1629,10 +1644,9 @@ public final class GboardCafeRuntime {
             }
             if (reference == null) return;
 
-            ViewGroup.LayoutParams target = lKey.getLayoutParams();
+            ViewGroup.LayoutParams target = targetKey.getLayoutParams();
             ViewGroup.LayoutParams source = reference.getLayoutParams();
-            if (target == null || source == null
-                    || target.getClass() != source.getClass()) return;
+            if (target == null || source == null || target.getClass() != source.getClass()) return;
 
             boolean changed = target.width != source.width;
             target.width = source.width;
@@ -1644,7 +1658,9 @@ public final class GboardCafeRuntime {
                 android.view.ViewGroup.MarginLayoutParams sourceMargins =
                         (android.view.ViewGroup.MarginLayoutParams) source;
                 changed |= targetMargins.leftMargin != sourceMargins.leftMargin
-                        || targetMargins.rightMargin != sourceMargins.rightMargin;
+                        || targetMargins.rightMargin != sourceMargins.rightMargin
+                        || targetMargins.getMarginStart() != sourceMargins.getMarginStart()
+                        || targetMargins.getMarginEnd() != sourceMargins.getMarginEnd();
                 targetMargins.leftMargin = sourceMargins.leftMargin;
                 targetMargins.rightMargin = sourceMargins.rightMargin;
                 targetMargins.setMarginStart(sourceMargins.getMarginStart());
@@ -1657,17 +1673,17 @@ public final class GboardCafeRuntime {
                         (LinearLayout.LayoutParams) target;
                 LinearLayout.LayoutParams sourceLinear =
                         (LinearLayout.LayoutParams) source;
-                changed |= targetLinear.weight != sourceLinear.weight;
+                changed |= targetLinear.weight != sourceLinear.weight
+                        || targetLinear.gravity != sourceLinear.gravity;
                 targetLinear.weight = sourceLinear.weight;
                 targetLinear.gravity = sourceLinear.gravity;
             }
 
             if (changed) {
-                lKey.setLayoutParams(target);
+                targetKey.setLayoutParams(target);
 
-                // The V16 row helper stores an explicit weightSum. Recalculate
-                // only this containing row after changing L's weight so the total
-                // matches its visible children; no other key parameters are changed.
+                // Keep the explicit row weight sum consistent without changing
+                // any sibling key's own LayoutParams.
                 if (parent instanceof LinearLayout
                         && ((LinearLayout) parent).getOrientation() == LinearLayout.HORIZONTAL) {
                     LinearLayout row = (LinearLayout) parent;
@@ -1687,11 +1703,12 @@ public final class GboardCafeRuntime {
                 parent.requestLayout();
                 parent.invalidate();
                 android.util.Log.i("GboardCafe",
-                        "Corrected only L key width using "
+                        "Corrected only " + targetLetter + " key width using "
                                 + displayLabelForKey(reference) + " as row reference");
             }
         } catch (Throwable error) {
-            android.util.Log.e("GboardCafe", "Failed to correct L key width", error);
+            android.util.Log.e("GboardCafe",
+                    "Failed to correct " + targetLetter + " key width", error);
         }
     }
 
