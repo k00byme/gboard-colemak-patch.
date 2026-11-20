@@ -1539,102 +1539,55 @@ public final class GboardCafeRuntime {
         } catch (Throwable ignored) {}
     }
 
-    /**
-     * Preserves each target slot's native geometry. Alphabet keys in a horizontal
-     * LinearLayout receive the same unit weight, so a moved letter cannot inherit
-     * a narrower/wider weight from its former key slot. Modifier keys and spacer
-     * views keep their original fixed dimensions and weights.
-     *
-     * The old implementation converted every positive pixel width into a weight
-     * and applied horizontal weighting to vertical LinearLayouts too. Both cases
-     * could distort one moved letter (including L) relative to the rest of its row.
-     */
     private static ViewGroup.LayoutParams layoutParamsForRow(
             ViewGroup target, View key, ViewGroup.LayoutParams original) {
         try {
-            if (key == null) {
-                return new ViewGroup.LayoutParams(
-                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT);
-            }
-
-            ViewGroup.LayoutParams source = original != null ? original : key.getLayoutParams();
             if (target instanceof LinearLayout) {
-                LinearLayout row = (LinearLayout) target;
-
-                // Weight affects height in a vertical LinearLayout, not width.
-                // Preserve the native parameters in that case.
-                if (row.getOrientation() != LinearLayout.HORIZONTAL) {
-                    if (source != null) return source;
-                    return new LinearLayout.LayoutParams(
-                            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT);
-                }
-
                 LinearLayout.LayoutParams params;
-                if (source instanceof LinearLayout.LayoutParams) {
-                    params = new LinearLayout.LayoutParams((LinearLayout.LayoutParams) source);
-                } else if (source != null) {
-                    params = new LinearLayout.LayoutParams(source);
-                } else {
+                if (original instanceof LinearLayout.LayoutParams) {
+                    params = new LinearLayout.LayoutParams((LinearLayout.LayoutParams) original);
+                } else if (key.getLayoutParams() instanceof LinearLayout.LayoutParams) {
                     params = new LinearLayout.LayoutParams(
-                            ViewGroup.LayoutParams.WRAP_CONTENT,
-                            ViewGroup.LayoutParams.MATCH_PARENT);
+                            (LinearLayout.LayoutParams) key.getLayoutParams());
+                } else {
+                    params = new LinearLayout.LayoutParams(0,
+                            ViewGroup.LayoutParams.MATCH_PARENT, 1f);
                 }
-
-                // Only letter keys are normalized. Keep shift, backspace, Enter,
-                // and non-key layout spacers at their original dimensions.
-                if (isKey(key) && isSingleLatinLetter(displayLabelForKey(key))) {
-                    params.width = 0;
-                    params.weight = 1f;
-                }
+                float weight = params.weight > 0f ? params.weight
+                        : (params.width > 0 ? Math.max(1, params.width) : 1f);
+                params.width = 0;
+                params.weight = weight;
                 return params;
             }
-
-            if (source != null) return source;
+            if (original != null) return original;
             return new ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT);
         } catch (Throwable ignored) {
-            if (original != null) return original;
-            if (key != null && key.getLayoutParams() != null) return key.getLayoutParams();
-            return new ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT);
+            return new ViewGroup.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT);
         }
     }
 
     private static void rebalanceRow(ViewGroup group, ArrayList<View> active) {
         try {
-            if (!(group instanceof LinearLayout)
-                    || ((LinearLayout) group).getOrientation() != LinearLayout.HORIZONTAL) {
+            if (!(group instanceof LinearLayout)) {
                 group.requestLayout();
                 return;
             }
-
-            // Give every Latin letter one equal share. Non-letter native keys retain
-            // their original fixed size/weight instead of being stretched to a letter width.
+            float total = 0f;
             for (View key : active) {
-                if (!isSingleLatinLetter(displayLabelForKey(key))) continue;
                 ViewGroup.LayoutParams raw = key.getLayoutParams();
                 if (raw instanceof LinearLayout.LayoutParams) {
                     LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) raw;
+                    if (lp.weight <= 0f) lp.weight = 1f;
                     lp.width = 0;
-                    lp.weight = 1f;
+                    total += lp.weight;
                     key.setLayoutParams(lp);
                 }
             }
-
-            // Recalculate the sum from all visible children, including any native
-            // weighted modifier or spacer that remains in the row.
-            float total = 0f;
-            LinearLayout row = (LinearLayout) group;
-            for (int i = 0; i < row.getChildCount(); i++) {
-                View child = row.getChildAt(i);
-                if (child.getVisibility() != View.VISIBLE) continue;
-                ViewGroup.LayoutParams raw = child.getLayoutParams();
-                if (raw instanceof LinearLayout.LayoutParams) {
-                    float weight = ((LinearLayout.LayoutParams) raw).weight;
-                    if (weight > 0f) total += weight;
-                }
-            }
-            row.setWeightSum(total);
+            // A zero weight sum lets LinearLayout recalculate from visible children.
+            // Keeping the previous explicit sum after deleting every key would leave
+            // invisible weight reserved and create a blank strip in the row.
+            ((LinearLayout) group).setWeightSum(total);
             group.requestLayout();
         } catch (Throwable ignored) {}
     }
