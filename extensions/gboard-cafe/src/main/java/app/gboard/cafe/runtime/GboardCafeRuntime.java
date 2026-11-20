@@ -234,12 +234,9 @@ public final class GboardCafeRuntime {
                         }
                     }
 
-                    // Wait until Gboard has completed the reorder and measured the
-                    // new row. The second frame avoids reading stale pre-reorder bounds.
-                    root.postOnAnimation(() -> root.postOnAnimation(() -> {
-                        correctLKeyWidthAfterMeasure(root);
-                        correctLetterWidth(root, 'o', 'i');
-                    }));
+                    // Normalize all 26 Latin key slots by row, without changing
+                    // the layout parameters of Shift, Backspace or other special keys.
+                    normalizeAlphabetRowWidths(root);
 
                     // Replace the selected theme's full-surface background after Gboard
                     // lays it out. Key views are excluded, so the active theme still owns
@@ -1565,142 +1562,214 @@ public final class GboardCafeRuntime {
      */    /**
      * Corrects L after Gboard has completed the row reorder and measurement.
      * Uses actual measured widths from the other visible Latin keys in L's row,
-     * then adjusts only L's LayoutParams. For weighted horizontal rows, scale
-     * L's weight by desiredWidth/currentWidth so its rendered width matches.
+         /**
+     * Makes the 26 Latin keys equal-sized within their own three visual rows.
+     *
+     * The native Gboard reorder moves SoftKeyViews between slots. A moved key
+     * can inherit the old slot's different weight/margins, which is why one
+     * letter can become narrower or wider than its neighbours. Normalize the
+     * row slot (the direct child of the horizontal LinearLayout), not the
+     * SoftKeyView itself. Special keys and their LayoutParams stay untouched.
      */
-    private static void correctLKeyWidthAfterMeasure(ViewGroup root) {
+    private static void normalizeAlphabetRowWidths(ViewGroup root) {
         try {
-            ArrayList<View> keys = new ArrayList<>();
-            collectKeyViews(root, keys);
+            ArrayList<View> allKeys = new ArrayList<>();
+            collectKeyViews(root, allKeys);
 
-            View lKey = null;
-            for (View key : keys) {
-                String shown = displayLabelForKey(key);
-                if (isSingleLatinLetter(shown)
-                        && Character.toLowerCase(shown.charAt(0)) == 'l') {
-                    lKey = key;
-                    break;
-                }
-            }
-            if (lKey == null || lKey.getWidth() <= 0
-                    || !(lKey.getParent() instanceof ViewGroup)) {
-                android.util.Log.w("GboardCafe",
-                        "Skipped L sizing: key not measured or has no parent");
-                return;
-            }
-
-            int[] lLocation = new int[2];
-            lKey.getLocationOnScreen(lLocation);
-            int centerY = lLocation[1] + lKey.getHeight() / 2;
+            Map<Character, View> byLetter = new HashMap<>();
+            ArrayList<ArrayList<View>> rows = new ArrayList<>();
+            ArrayList<Integer> rowCenters = new ArrayList<>();
             int tolerance = dp(root, 16);
 
-            ArrayList<Integer> peerWidths = new ArrayList<>();
-            ArrayList<Integer> peerLeftMargins = new ArrayList<>();
-            ArrayList<Integer> peerRightMargins = new ArrayList<>();
-            ArrayList<Integer> peerStartMargins = new ArrayList<>();
-            ArrayList<Integer> peerEndMargins = new ArrayList<>();
+            for (View key : allKeys) {
+                String shown = displayLabelForKey(key);
+                if (!isSingleLatinLetter(shown)) continue;
 
-            for (View candidate : keys) {
-                if (candidate == lKey || candidate.getVisibility() != View.VISIBLE
-                        || candidate.getWidth() <= 0
-                        || !isSingleLatinLetter(displayLabelForKey(candidate))) {
-                    continue;
-                }
+                char letter = Character.toLowerCase(shown.charAt(0));
+                if (byLetter.put(letter, key) != null) return;
 
                 int[] location = new int[2];
-                candidate.getLocationOnScreen(location);
-                int candidateCenterY = location[1] + candidate.getHeight() / 2;
-                if (Math.abs(candidateCenterY - centerY) > tolerance) continue;
+                key.getLocationOnScreen(location);
+                int centerY = location[1] + key.getHeight() / 2;
 
-                peerWidths.add(candidate.getWidth());
-                ViewGroup.LayoutParams params = candidate.getLayoutParams();
-                if (params instanceof android.view.ViewGroup.MarginLayoutParams) {
-                    android.view.ViewGroup.MarginLayoutParams margin =
-                            (android.view.ViewGroup.MarginLayoutParams) params;
-                    peerLeftMargins.add(margin.leftMargin);
-                    peerRightMargins.add(margin.rightMargin);
-                    peerStartMargins.add(margin.getMarginStart());
-                    peerEndMargins.add(margin.getMarginEnd());
-                }
-            }
-
-            // Require several peers so one unusual key cannot define the target.
-            if (peerWidths.size() < 3) {
-                android.util.Log.w("GboardCafe",
-                        "Skipped L sizing: fewer than three measured same-row peers");
-                return;
-            }
-
-            int desiredWidth = medianInt(peerWidths);
-            int currentWidth = lKey.getWidth();
-            ViewGroup parent = (ViewGroup) lKey.getParent();
-            ViewGroup.LayoutParams target = lKey.getLayoutParams();
-            if (target == null) return;
-            boolean changed = false;
-
-            if (target instanceof LinearLayout.LayoutParams
-                    && parent instanceof LinearLayout
-                    && ((LinearLayout) parent).getOrientation() == LinearLayout.HORIZONTAL) {
-                LinearLayout.LayoutParams linear = (LinearLayout.LayoutParams) target;
-                if (linear.weight > 0f && currentWidth > 0) {
-                    float correctedWeight = linear.weight * desiredWidth / (float) currentWidth;
-                    changed |= Math.abs(linear.weight - correctedWeight) > 0.0001f;
-                    linear.weight = correctedWeight;
-                    linear.width = 0;
-                } else {
-                    changed |= target.width != desiredWidth;
-                    target.width = desiredWidth;
-                }
-            } else {
-                changed |= target.width != desiredWidth;
-                target.width = desiredWidth;
-            }
-
-            if (target instanceof android.view.ViewGroup.MarginLayoutParams
-                    && !peerLeftMargins.isEmpty()) {
-                android.view.ViewGroup.MarginLayoutParams margin =
-                        (android.view.ViewGroup.MarginLayoutParams) target;
-                int left = medianInt(peerLeftMargins);
-                int right = medianInt(peerRightMargins);
-                int start = medianInt(peerStartMargins);
-                int end = medianInt(peerEndMargins);
-                changed |= margin.leftMargin != left || margin.rightMargin != right
-                        || margin.getMarginStart() != start || margin.getMarginEnd() != end;
-                margin.leftMargin = left;
-                margin.rightMargin = right;
-                margin.setMarginStart(start);
-                margin.setMarginEnd(end);
-            }
-
-            if (changed) {
-                lKey.setLayoutParams(target);
-                if (parent instanceof LinearLayout
-                        && ((LinearLayout) parent).getOrientation() == LinearLayout.HORIZONTAL) {
-                    LinearLayout row = (LinearLayout) parent;
-                    float totalWeight = 0f;
-                    for (int i = 0; i < row.getChildCount(); i++) {
-                        View child = row.getChildAt(i);
-                        if (child.getVisibility() != View.VISIBLE) continue;
-                        ViewGroup.LayoutParams params = child.getLayoutParams();
-                        if (params instanceof LinearLayout.LayoutParams) {
-                            float weight = ((LinearLayout.LayoutParams) params).weight;
-                            if (weight > 0f) totalWeight += weight;
-                        }
+                int match = -1;
+                int bestDistance = Integer.MAX_VALUE;
+                for (int i = 0; i < rowCenters.size(); i++) {
+                    int distance = Math.abs(rowCenters.get(i) - centerY);
+                    if (distance <= tolerance && distance < bestDistance) {
+                        match = i;
+                        bestDistance = distance;
                     }
-                    row.setWeightSum(totalWeight);
                 }
-                parent.requestLayout();
-                parent.invalidate();
-                android.util.Log.i("GboardCafe",
-                        "Resized L after measurement from " + currentWidth
-                                + "px to target " + desiredWidth + "px");
-            } else {
-                android.util.Log.i("GboardCafe",
-                        "L already matches same-row median width " + desiredWidth + "px");
+
+                if (match >= 0) {
+                    rows.get(match).add(key);
+                    int size = rows.get(match).size();
+                    rowCenters.set(match,
+                            ((size - 1) * rowCenters.get(match) + centerY) / size);
+                } else {
+                    int insertAt = 0;
+                    while (insertAt < rowCenters.size()
+                            && rowCenters.get(insertAt) < centerY) {
+                        insertAt++;
+                    }
+                    rowCenters.add(insertAt, centerY);
+                    rows.add(insertAt, new ArrayList<>());
+                    rows.get(insertAt).add(key);
+                }
+            }
+
+            if (byLetter.size() != 26 || rows.size() != 3) return;
+            for (char letter = 'a'; letter <= 'z'; letter++) {
+                if (!byLetter.containsKey(letter)) return;
+            }
+
+            final int[] expectedCounts = {10, 9, 7};
+            for (int rowIndex = 0; rowIndex < rows.size(); rowIndex++) {
+                ArrayList<View> rowKeys = rows.get(rowIndex);
+                if (rowKeys.size() != expectedCounts[rowIndex]) return;
+                normalizeOneAlphabetRow(root, rowKeys, tolerance);
             }
         } catch (Throwable error) {
             android.util.Log.e("GboardCafe",
-                    "Failed measured-width correction for L", error);
+                    "Failed to normalize alphabet row widths", error);
+        }
+    }
+
+    /**
+     * Finds the nearest horizontal LinearLayout containing exactly this visual
+     * alphabet row. Keys may be direct children or nested inside one slot view.
+     */
+    private static void normalizeOneAlphabetRow(
+            ViewGroup root, ArrayList<View> rowKeys, int tolerance) {
+        try {
+            if (rowKeys == null || rowKeys.isEmpty()) return;
+
+            int[] firstLocation = new int[2];
+            rowKeys.get(0).getLocationOnScreen(firstLocation);
+            int rowCenterY = firstLocation[1] + rowKeys.get(0).getHeight() / 2;
+
+            Set<View> expected = new HashSet<>(rowKeys);
+            LinearLayout rowContainer = null;
+
+            View cursor = rowKeys.get(0);
+            while (cursor.getParent() instanceof ViewGroup) {
+                ViewGroup ancestor = (ViewGroup) cursor.getParent();
+                if (ancestor instanceof LinearLayout
+                        && ((LinearLayout) ancestor).getOrientation()
+                                == LinearLayout.HORIZONTAL) {
+                    ArrayList<View> descendants = new ArrayList<>();
+                    collectKeyViews(ancestor, descendants);
+
+                    Set<View> foundInThisRow = new HashSet<>();
+                    for (View candidate : descendants) {
+                        if (!isSingleLatinLetter(displayLabelForKey(candidate))) continue;
+                        int[] location = new int[2];
+                        candidate.getLocationOnScreen(location);
+                        int centerY = location[1] + candidate.getHeight() / 2;
+                        if (Math.abs(centerY - rowCenterY) <= tolerance) {
+                            foundInThisRow.add(candidate);
+                        }
+                    }
+
+                    if (foundInThisRow.equals(expected)) {
+                        rowContainer = (LinearLayout) ancestor;
+                        break;
+                    }
+                }
+
+                if (ancestor == root) break;
+                cursor = ancestor;
+            }
+
+            if (rowContainer == null) {
+                android.util.Log.w("GboardCafe",
+                        "Could not find one horizontal row container for "
+                                + rowKeys.size() + " alphabet keys");
+                return;
+            }
+
+            ArrayList<View> slots = new ArrayList<>();
+            Set<View> uniqueSlots = new HashSet<>();
+            for (View key : rowKeys) {
+                View slot = key;
+                while (slot.getParent() != rowContainer) {
+                    if (!(slot.getParent() instanceof View)) return;
+                    slot = (View) slot.getParent();
+                }
+                if (!uniqueSlots.add(slot)) return;
+                if (!(slot.getLayoutParams() instanceof LinearLayout.LayoutParams)) return;
+                slots.add(slot);
+            }
+            if (slots.size() != rowKeys.size()) return;
+
+            ArrayList<Integer> leftMargins = new ArrayList<>();
+            ArrayList<Integer> rightMargins = new ArrayList<>();
+            ArrayList<Integer> startMargins = new ArrayList<>();
+            ArrayList<Integer> endMargins = new ArrayList<>();
+
+            for (View slot : slots) {
+                LinearLayout.LayoutParams lp =
+                        (LinearLayout.LayoutParams) slot.getLayoutParams();
+                leftMargins.add(lp.leftMargin);
+                rightMargins.add(lp.rightMargin);
+                startMargins.add(lp.getMarginStart());
+                endMargins.add(lp.getMarginEnd());
+            }
+
+            // Use a row-wide median for horizontal spacing too. This removes
+            // inherited edge-slot spacing without changing vertical alignment.
+            int commonLeft = medianInt(leftMargins);
+            int commonRight = medianInt(rightMargins);
+            int commonStart = medianInt(startMargins);
+            int commonEnd = medianInt(endMargins);
+
+            boolean changed = false;
+            for (View slot : slots) {
+                LinearLayout.LayoutParams lp =
+                        (LinearLayout.LayoutParams) slot.getLayoutParams();
+                if (lp.width != 0 || Math.abs(lp.weight - 1f) > 0.0001f
+                        || lp.leftMargin != commonLeft || lp.rightMargin != commonRight
+                        || lp.getMarginStart() != commonStart
+                        || lp.getMarginEnd() != commonEnd) {
+                    changed = true;
+                }
+
+                // Only alphabet slots receive the equal width weight.
+                lp.width = 0;
+                lp.weight = 1f;
+                lp.leftMargin = commonLeft;
+                lp.rightMargin = commonRight;
+                lp.setMarginStart(commonStart);
+                lp.setMarginEnd(commonEnd);
+                slot.setLayoutParams(lp);
+            }
+
+            // Preserve every non-letter child's weight and include it in the
+            // sum. This is the important difference from the earlier global
+            // attempt: special keys retain their own dimensions and weights.
+            float totalWeight = 0f;
+            for (int i = 0; i < rowContainer.getChildCount(); i++) {
+                View child = rowContainer.getChildAt(i);
+                if (child.getVisibility() == View.GONE) continue;
+                ViewGroup.LayoutParams params = child.getLayoutParams();
+                if (params instanceof LinearLayout.LayoutParams) {
+                    float weight = ((LinearLayout.LayoutParams) params).weight;
+                    if (weight > 0f) totalWeight += weight;
+                }
+            }
+
+            rowContainer.setWeightSum(totalWeight);
+            if (changed) {
+                rowContainer.requestLayout();
+                rowContainer.invalidate();
+            }
+            android.util.Log.i("GboardCafe",
+                    "Normalized all " + slots.size()
+                            + " alphabet slots to equal weights in one row");
+        } catch (Throwable error) {
+            android.util.Log.e("GboardCafe",
+                    "Failed to normalize one alphabet row", error);
         }
     }
 
@@ -1710,157 +1779,7 @@ public final class GboardCafeRuntime {
         return sorted.get(sorted.size() / 2);
     }
 
-    private static void correctLetterWidth(
-            ViewGroup root, char targetLetter, char preferredLetter) {
-        try {
-            ArrayList<View> keys = new ArrayList<>();
-            collectKeyViews(root, keys);
-
-            View targetKey = null;
-            View preferredKey = null;
-            for (View key : keys) {
-                String shown = displayLabelForKey(key);
-                if (!isSingleLatinLetter(shown)) continue;
-                char letter = Character.toLowerCase(shown.charAt(0));
-                if (letter == targetLetter && targetKey == null) targetKey = key;
-                else if (letter == preferredLetter && preferredKey == null) preferredKey = key;
-            }
-            if (targetKey == null || !(targetKey.getParent() instanceof ViewGroup)) return;
-
-            ViewGroup parent = (ViewGroup) targetKey.getParent();
-            View reference = preferredKey != null && preferredKey.getParent() == parent
-                    ? preferredKey : null;
-            int[] targetLocation = new int[2];
-            targetKey.getLocationOnScreen(targetLocation);
-            int targetCenterY = targetLocation[1] + targetKey.getHeight() / 2;
-            int targetCenterX = targetLocation[0] + targetKey.getWidth() / 2;
-            int rowTolerance = dp(root, 16);
-
-            // Prefer a peer in the same immediate row container.
-            if (reference == null) {
-                int bestDistance = Integer.MAX_VALUE;
-                for (int i = 0; i < parent.getChildCount(); i++) {
-                    View candidate = parent.getChildAt(i);
-                    if (candidate == targetKey || !isKey(candidate)) continue;
-                    if (!isSingleLatinLetter(displayLabelForKey(candidate))) continue;
-
-                    int[] location = new int[2];
-                    candidate.getLocationOnScreen(location);
-                    int centerY = location[1] + candidate.getHeight() / 2;
-                    if (Math.abs(centerY - targetCenterY) > rowTolerance) continue;
-
-                    int centerX = location[0] + candidate.getWidth() / 2;
-                    int distance = Math.abs(centerX - targetCenterX);
-                    if (distance < bestDistance) {
-                        bestDistance = distance;
-                        reference = candidate;
-                    }
-                }
-            }
-
-            // Some Gboard versions wrap each key separately. In that case,
-            // find the nearest letter in the same visual row and equivalent
-            // container/LayoutParams types.
-            if (reference == null) {
-                int bestDistance = Integer.MAX_VALUE;
-                for (View candidate : keys) {
-                    if (candidate == targetKey
-                            || !isSingleLatinLetter(displayLabelForKey(candidate))
-                            || !(candidate.getParent() instanceof ViewGroup)) continue;
-                    ViewGroup candidateParent = (ViewGroup) candidate.getParent();
-                    if (candidateParent.getClass() != parent.getClass()) continue;
-                    ViewGroup.LayoutParams candidateParams = candidate.getLayoutParams();
-                    ViewGroup.LayoutParams targetParams = targetKey.getLayoutParams();
-                    if (candidateParams == null || targetParams == null
-                            || candidateParams.getClass() != targetParams.getClass()) continue;
-
-                    int[] location = new int[2];
-                    candidate.getLocationOnScreen(location);
-                    int centerY = location[1] + candidate.getHeight() / 2;
-                    if (Math.abs(centerY - targetCenterY) > rowTolerance) continue;
-
-                    int centerX = location[0] + candidate.getWidth() / 2;
-                    int distance = Math.abs(centerX - targetCenterX);
-                    if (distance < bestDistance) {
-                        bestDistance = distance;
-                        reference = candidate;
-                    }
-                }
-            }
-            if (reference == null) return;
-
-            ViewGroup.LayoutParams target = targetKey.getLayoutParams();
-            ViewGroup.LayoutParams source = reference.getLayoutParams();
-            if (target == null || source == null || target.getClass() != source.getClass()) return;
-
-            boolean changed = target.width != source.width;
-            target.width = source.width;
-
-            if (target instanceof android.view.ViewGroup.MarginLayoutParams
-                    && source instanceof android.view.ViewGroup.MarginLayoutParams) {
-                android.view.ViewGroup.MarginLayoutParams targetMargins =
-                        (android.view.ViewGroup.MarginLayoutParams) target;
-                android.view.ViewGroup.MarginLayoutParams sourceMargins =
-                        (android.view.ViewGroup.MarginLayoutParams) source;
-                changed |= targetMargins.leftMargin != sourceMargins.leftMargin
-                        || targetMargins.rightMargin != sourceMargins.rightMargin
-                        || targetMargins.getMarginStart() != sourceMargins.getMarginStart()
-                        || targetMargins.getMarginEnd() != sourceMargins.getMarginEnd();
-                targetMargins.leftMargin = sourceMargins.leftMargin;
-                targetMargins.rightMargin = sourceMargins.rightMargin;
-                targetMargins.setMarginStart(sourceMargins.getMarginStart());
-                targetMargins.setMarginEnd(sourceMargins.getMarginEnd());
-            }
-
-            if (target instanceof LinearLayout.LayoutParams
-                    && source instanceof LinearLayout.LayoutParams) {
-                LinearLayout.LayoutParams targetLinear =
-                        (LinearLayout.LayoutParams) target;
-                LinearLayout.LayoutParams sourceLinear =
-                        (LinearLayout.LayoutParams) source;
-                changed |= targetLinear.weight != sourceLinear.weight
-                        || targetLinear.gravity != sourceLinear.gravity;
-                targetLinear.weight = sourceLinear.weight;
-                targetLinear.gravity = sourceLinear.gravity;
-            }
-
-            if (changed) {
-                targetKey.setLayoutParams(target);
-
-                // Keep the explicit row weight sum consistent without changing
-                // any sibling key's own LayoutParams.
-                if (parent instanceof LinearLayout
-                        && ((LinearLayout) parent).getOrientation() == LinearLayout.HORIZONTAL) {
-                    LinearLayout row = (LinearLayout) parent;
-                    float totalWeight = 0f;
-                    for (int i = 0; i < row.getChildCount(); i++) {
-                        View child = row.getChildAt(i);
-                        if (child.getVisibility() != View.VISIBLE) continue;
-                        ViewGroup.LayoutParams childParams = child.getLayoutParams();
-                        if (childParams instanceof LinearLayout.LayoutParams) {
-                            float weight = ((LinearLayout.LayoutParams) childParams).weight;
-                            if (weight > 0f) totalWeight += weight;
-                        }
-                    }
-                    row.setWeightSum(totalWeight);
-                }
-
-                parent.requestLayout();
-                parent.invalidate();
-                android.util.Log.i("GboardCafe",
-                        "Corrected only " + targetLetter + " key width using "
-                                + displayLabelForKey(reference) + " as row reference");
-            }
-        } catch (Throwable error) {
-            android.util.Log.e("GboardCafe",
-                    "Failed to correct " + targetLetter + " key width", error);
-        }
-    }
-
-    private static ViewGroup.LayoutParams layoutParamsForRow(
-            ViewGroup target, View key, ViewGroup.LayoutParams original) {
-        try {
-            if (target instanceof LinearLayout) {
+t instanceof LinearLayout) {
                 LinearLayout.LayoutParams params;
                 if (original instanceof LinearLayout.LayoutParams) {
                     params = new LinearLayout.LayoutParams((LinearLayout.LayoutParams) original);
