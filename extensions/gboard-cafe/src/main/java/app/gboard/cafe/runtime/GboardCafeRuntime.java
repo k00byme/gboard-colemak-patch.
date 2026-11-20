@@ -1664,6 +1664,26 @@ public final class GboardCafeRuntime {
 
             if (changed) {
                 lKey.setLayoutParams(target);
+
+                // The V16 row helper stores an explicit weightSum. Recalculate
+                // only this containing row after changing L's weight so the total
+                // matches its visible children; no other key parameters are changed.
+                if (parent instanceof LinearLayout
+                        && ((LinearLayout) parent).getOrientation() == LinearLayout.HORIZONTAL) {
+                    LinearLayout row = (LinearLayout) parent;
+                    float totalWeight = 0f;
+                    for (int i = 0; i < row.getChildCount(); i++) {
+                        View child = row.getChildAt(i);
+                        if (child.getVisibility() != View.VISIBLE) continue;
+                        ViewGroup.LayoutParams childParams = child.getLayoutParams();
+                        if (childParams instanceof LinearLayout.LayoutParams) {
+                            float weight = ((LinearLayout.LayoutParams) childParams).weight;
+                            if (weight > 0f) totalWeight += weight;
+                        }
+                    }
+                    row.setWeightSum(totalWeight);
+                }
+
                 parent.requestLayout();
                 parent.invalidate();
                 android.util.Log.i("GboardCafe",
