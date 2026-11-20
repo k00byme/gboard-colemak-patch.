@@ -1570,18 +1570,49 @@ public final class GboardCafeRuntime {
 
             ViewGroup parent = (ViewGroup) lKey.getParent();
             View reference = gKey != null && gKey.getParent() == parent ? gKey : null;
-            if (reference == null) {
-                int[] lLocation = new int[2];
-                lKey.getLocationOnScreen(lLocation);
-                int lCenterY = lLocation[1] + lKey.getHeight() / 2;
-                int lCenterX = lLocation[0] + lKey.getWidth() / 2;
-                int bestDistance = Integer.MAX_VALUE;
-                int rowTolerance = dp(root, 16);
+            int[] lLocation = new int[2];
+            lKey.getLocationOnScreen(lLocation);
+            int lCenterY = lLocation[1] + lKey.getHeight() / 2;
+            int lCenterX = lLocation[0] + lKey.getWidth() / 2;
+            int rowTolerance = dp(root, 16);
 
+            // First search the direct row container. This avoids crossing layout
+            // groups when Gboard uses per-row wrappers.
+            if (reference == null) {
+                int bestDistance = Integer.MAX_VALUE;
                 for (int i = 0; i < parent.getChildCount(); i++) {
                     View candidate = parent.getChildAt(i);
                     if (candidate == lKey || !isKey(candidate)) continue;
                     if (!isSingleLatinLetter(displayLabelForKey(candidate))) continue;
+
+                    int[] location = new int[2];
+                    candidate.getLocationOnScreen(location);
+                    int centerY = location[1] + candidate.getHeight() / 2;
+                    if (Math.abs(centerY - lCenterY) > rowTolerance) continue;
+
+                    int centerX = location[0] + candidate.getWidth() / 2;
+                    int distance = Math.abs(centerX - lCenterX);
+                    if (distance < bestDistance) {
+                        bestDistance = distance;
+                        reference = candidate;
+                    }
+                }
+            }
+
+            // If L is wrapped alone, use the nearest letter in the same visual row.
+            // Only accept a peer with the same LayoutParams type and parent type.
+            if (reference == null) {
+                int bestDistance = Integer.MAX_VALUE;
+                for (View candidate : keys) {
+                    if (candidate == lKey
+                            || !isSingleLatinLetter(displayLabelForKey(candidate))
+                            || !(candidate.getParent() instanceof ViewGroup)) continue;
+                    ViewGroup candidateParent = (ViewGroup) candidate.getParent();
+                    if (candidateParent.getClass() != parent.getClass()) continue;
+                    ViewGroup.LayoutParams candidateParams = candidate.getLayoutParams();
+                    ViewGroup.LayoutParams lParams = lKey.getLayoutParams();
+                    if (candidateParams == null || lParams == null
+                            || candidateParams.getClass() != lParams.getClass()) continue;
 
                     int[] location = new int[2];
                     candidate.getLocationOnScreen(location);
