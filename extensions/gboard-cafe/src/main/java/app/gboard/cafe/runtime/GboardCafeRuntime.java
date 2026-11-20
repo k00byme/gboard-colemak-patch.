@@ -557,9 +557,8 @@ public final class GboardCafeRuntime {
             // Detach only the 26 letter views. Shift, ?123, Backspace, Enter,
             // emoji/language keys, spacers and their containers stay attached.
             for (View slot : alphabetSlots) {
-                ViewParent rawParent = slot.getParent();
-                if (!(rawParent instanceof ViewGroup)) return false;
-                ((ViewGroup) rawParent).removeView(slot);
+                if (!(slot.getParent() instanceof ViewGroup)) return false;
+                ((ViewGroup) slot.getParent()).removeView(slot);
             }
 
             // Refill the exact original child positions. Non-letter children are
@@ -1585,83 +1584,6 @@ public final class GboardCafeRuntime {
             }
         } catch (Throwable ignored) {}
     }
-
-    /**
-     * Repairs only the Latin L key when its slot inherited a different width
-     * or horizontal spacing from the original Gboard key it replaced.
-     *
-     * The requested arrangement places L immediately after G in the first row.
-     * Prefer G as the reference when both keys share a parent; otherwise use the
-     * nearest Latin-letter sibling in L's own row container. Only L's width,
-     * weight and horizontal margins are copied. No other key or row is changed.
-     */
-    /**
-     * Normalizes only the two letters that can inherit unusual edge-slot sizing
-     * after the native QWERTY views are rearranged:
-     * - L is compared with G in the first row.
-     * - O is compared with I in the second row.
-     *
-     * Every other key keeps its existing LayoutParams.
-     */    /**
-     * Corrects L after Gboard has completed the row reorder and measurement.
-     * Uses actual measured widths from the other visible Latin keys in L's row,
-         /**
-     * Makes the 26 Latin keys equal-sized within their own three visual rows.
-     *
-     * The native Gboard reorder moves SoftKeyViews between slots. A moved key
-     * can inherit the old slot's different weight/margins, which is why one
-     * letter can become narrower or wider than its neighbours. Normalize the
-     * row slot (the direct child of the horizontal LinearLayout), not the
-     * SoftKeyView itself. Special keys and their LayoutParams stay untouched.
-     */
-.getMarginEnd() != commonEnd) {
-                    changed = true;
-                }
-
-                // Only alphabet slots receive the equal width weight.
-                lp.width = 0;
-                lp.weight = 1f;
-                lp.leftMargin = commonLeft;
-                lp.rightMargin = commonRight;
-                lp.setMarginStart(commonStart);
-                lp.setMarginEnd(commonEnd);
-                slot.setLayoutParams(lp);
-            }
-
-            // Preserve every non-letter child's weight and include it in the
-            // sum. This is the important difference from the earlier global
-            // attempt: special keys retain their own dimensions and weights.
-            float totalWeight = 0f;
-            for (int i = 0; i < rowContainer.getChildCount(); i++) {
-                View child = rowContainer.getChildAt(i);
-                if (child.getVisibility() == View.GONE) continue;
-                ViewGroup.LayoutParams params = child.getLayoutParams();
-                if (params instanceof LinearLayout.LayoutParams) {
-                    float weight = ((LinearLayout.LayoutParams) params).weight;
-                    if (weight > 0f) totalWeight += weight;
-                }
-            }
-
-            rowContainer.setWeightSum(totalWeight);
-            if (changed) {
-                rowContainer.requestLayout();
-                rowContainer.invalidate();
-            }
-            android.util.Log.i("GboardCafe",
-                    "Normalized all " + slots.size()
-                            + " alphabet slots to equal weights in one row");
-        } catch (Throwable error) {
-            android.util.Log.e("GboardCafe",
-                    "Failed to normalize one alphabet row", error);
-        }
-    }
-
-    private static int medianInt(ArrayList<Integer> values) {
-        ArrayList<Integer> sorted = new ArrayList<>(values);
-        Collections.sort(sorted);
-        return sorted.get(sorted.size() / 2);
-    }
-
 
     private static ViewGroup.LayoutParams layoutParamsForRow(
             ViewGroup target, View key, ViewGroup.LayoutParams original) {
