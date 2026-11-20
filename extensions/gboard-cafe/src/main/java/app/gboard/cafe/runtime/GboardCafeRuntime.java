@@ -27,11 +27,8 @@ import android.widget.TextView;
 
 import org.json.JSONArray;
 
-import java.io.ByteArrayInputStream;
-import java.io.InputStream;
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -237,6 +234,11 @@ public final class GboardCafeRuntime {
                         }
                     }
 
+                    // Replace the selected theme's full-surface background after Gboard
+                    // lays it out. Key views are excluded, so the active theme still owns
+                    // the spacebar, ?123 and Enter key backgrounds.
+                    forceBlackKeyboardSurface(root);
+
                     // Re-run after each actual layout so newly created symbol,
                     // number and action keys receive the same colors as letter keys.
                     applyBlackGrayColors(root);
@@ -251,6 +253,62 @@ public final class GboardCafeRuntime {
             lastLayoutStatus = "Falha no pós-layout: "
                     + error.getClass().getSimpleName() + ": " + error.getMessage();
             android.util.Log.e("GboardCafe", lastLayoutStatus, error);
+        }
+    }
+
+    /**
+     * Forces the keyboard's full-surface background to opaque black after the
+     * native theme is applied. The key views themselves are intentionally
+     * excluded, so the selected theme keeps control of spacebar and action keys.
+     *
+     * Gboard 18.5.4 uses SoftKeyboardView (a FrameLayout) as the keyboard root.
+     * Its background is drawn before children, so replacing that background
+     * cannot cover labels, toolbar controls, or key views.
+     */
+    private static void forceBlackKeyboardSurface(ViewGroup root) {
+        if (root == null) return;
+        try {
+            root.setBackgroundColor(Color.BLACK);
+            int width = root.getWidth();
+            int height = root.getHeight();
+            if (width <= 0 || height <= 0) return;
+            forceBlackFullSizeBackgroundChildren(root, width, height);
+        } catch (Throwable error) {
+            android.util.Log.e("GboardCafe", "Failed to force black keyboard surface", error);
+        }
+    }
+
+    /**
+     * Some Gboard theme variants attach the wallpaper as a full-size child
+     * instead of the root background. Neutralize only non-key children that
+     * cover nearly the whole keyboard; all native key views are left untouched.
+     */
+    private static void forceBlackFullSizeBackgroundChildren(
+            ViewGroup parent, int rootWidth, int rootHeight) {
+        try {
+            for (int i = 0; i < parent.getChildCount(); i++) {
+                View child = parent.getChildAt(i);
+                if (child == null || isKey(child)) continue;
+
+                int childWidth = child.getWidth();
+                int childHeight = child.getHeight();
+                boolean fullSurface = childWidth >= rootWidth * 0.88f
+                        && childHeight >= rootHeight * 0.62f;
+
+                if (fullSurface) {
+                    child.setBackgroundColor(Color.BLACK);
+                    if (child instanceof ImageView) {
+                        ((ImageView) child).setImageDrawable(null);
+                    }
+                }
+
+                if (child instanceof ViewGroup) {
+                    forceBlackFullSizeBackgroundChildren(
+                            (ViewGroup) child, rootWidth, rootHeight);
+                }
+            }
+        } catch (Throwable error) {
+            android.util.Log.e("GboardCafe", "Failed to neutralize full-size keyboard background", error);
         }
     }
 
@@ -1934,44 +1992,5 @@ public final class GboardCafeRuntime {
     }
 
 
-    /*
-     * Appends a final theme rule after Gboard has merged its built-in and
-     * selected theme stylesheets. This is deliberately limited to the
-     * keyboard surface selectors; action keys and the spacebar keep their
-     * selected theme colors.
-     *
-     * Lrsg.a(Laali, String, InputStream) is Gboard 18.5.4's own binarypb
-     * stylesheet parser. Reusing it avoids hand-editing generated protobuf
-     * objects and runs only on the theme-merge path, never while typing.
-     */
-    private static final byte[] BLACK_KEYBOARD_SURFACE_OVERLAY =
-            Base64.decode("CiAKFC5rZXlib2FyZC1iYWNrZ3JvdW5kEAEaBgiAgID4DwowCiQud2lkZ2V0LWtleWJvYXJkLmtleWJvYXJkLWJhY2tncm91bmQQARoGCICAgPgPCjsKLy53aWRnZXQta2V5Ym9hcmQua2V5Ym9hcmQtYmFja2dyb3VuZC5ob3Jpem9udGFsEAEaBgiAgID4Dwo5Ci0ud2lkZ2V0LWtleWJvYXJkLmtleWJvYXJkLWJhY2tncm91bmQudmVydGljYWwQARoGCICAgPgPCiwKIC5rZXlib2FyZC1iYWNrZ3JvdW5kLmZvci1wcmV2aWV3EAEaBgiAgID4DwofChMua2V5Ym9hcmQtYmFzZS1hcmVhEAEaBgiAgID4DwoyCiYua2V5Ym9hcmQtYm9keS1hcmVhLmZvci1ub24tcHJpbWUtYm9keRABGgYIgICA+A8SMwopZGVmYXVsdF9rZXlib2FyZF9iYWNrZ3JvdW5kX3ByaW1hcnlfY29sb3ISBgiAgID4DxI1CitkZWZhdWx0X2tleWJvYXJkX2JhY2tncm91bmRfc2Vjb25kYXJ5X2NvbG9yEgYIgICA+A8SMgooZGVmYXVsdF9rZXlib2FyZF9iYWNrZ3JvdW5kX2hlYWRlcl9jb2xvchIGCICAgPgP", Base64.DEFAULT);
-
-    public static void forceBlackKeyboardBackground(Object builder) {
-        if (builder == null) return;
-        ByteArrayInputStream input = null;
-        try {
-            ClassLoader loader = builder.getClass().getClassLoader();
-            Class<?> parserClass = Class.forName("Lrsg", true, loader);
-            Method parser = parserClass.getDeclaredMethod(
-                    "a", builder.getClass(), String.class, InputStream.class);
-            parser.setAccessible(true);
-            input = new ByteArrayInputStream(BLACK_KEYBOARD_SURFACE_OVERLAY);
-            parser.invoke(
-                    null,
-                    builder,
-                    "gboard_cafe_black_keyboard_surface.binarypb",
-                    input);
-        } catch (Throwable error) {
-            android.util.Log.e(
-                    "GboardCafe",
-                    "Failed to apply final black keyboard-surface stylesheet",
-                    error);
-        } finally {
-            if (input != null) {
-                try { input.close(); } catch (Throwable ignored) {}
-            }
-        }
-    }
 
 }
