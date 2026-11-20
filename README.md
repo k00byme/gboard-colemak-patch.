@@ -84,9 +84,9 @@ O GitHub Actions gera um único bundle `.mpp`. Build bem-sucedido confirma compi
 O patch aplica automaticamente o layout às três fileiras alfabéticas, preservando as demais fileiras nativas e as teclas de função:
 
 ```text
-Qgfpwjlduh
-Arszyneio
-Tcxvbkm
+Qfpxzglduh
+Arsyjneio
+Tcwvbkm
 ```
 
 As cores também fazem parte do runtime incluído no mesmo bundle Morphe: rótulos das letras em `#3B3B3B` e fundos das teclas de ação azuis (Shift, Backspace, Enter e teclas de função identificadas) em `#000000`. Não é necessário importar um tema ZIP separado.
