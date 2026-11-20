@@ -224,7 +224,7 @@ public final class GboardCafeRuntime {
                     if (!APPLIED_QGFPW_ROOTS.containsKey(root)) {
                         if (applyForcedQgfpwLayout(root)) {
                             APPLIED_QGFPW_ROOTS.put(root, Boolean.TRUE);
-                            lastLayoutStatus = "Preset Qgfpwjlduh / Arszyneio / Tcxvbkm aplicado diretamente";
+                            lastLayoutStatus = "Preset Qfpxzglduh / Arsyjneio / Tcwvbkm aplicado diretamente";
                             lastAppliedKeyCount = 26;
                             lastAppliedRowCount = 3;
                         } else {
@@ -233,6 +233,13 @@ public final class GboardCafeRuntime {
                             lastLayoutStatus = "Aguardando três fileiras alfabéticas 10/9/7";
                         }
                     }
+
+
+
+                    // Replace the selected theme's full-surface background after Gboard
+                    // lays it out. Key views are excluded, so the active theme still owns
+                    // the spacebar, ?123 and Enter key backgrounds.
+                    forceBlackKeyboardSurface(root);
 
                     // Re-run after each actual layout so newly created symbol,
                     // number and action keys receive the same colors as letter keys.
@@ -248,6 +255,62 @@ public final class GboardCafeRuntime {
             lastLayoutStatus = "Falha no pós-layout: "
                     + error.getClass().getSimpleName() + ": " + error.getMessage();
             android.util.Log.e("GboardCafe", lastLayoutStatus, error);
+        }
+    }
+
+    /**
+     * Forces the keyboard's full-surface background to opaque black after the
+     * native theme is applied. The key views themselves are intentionally
+     * excluded, so the selected theme keeps control of spacebar and action keys.
+     *
+     * Gboard 18.5.4 uses SoftKeyboardView (a FrameLayout) as the keyboard root.
+     * Its background is drawn before children, so replacing that background
+     * cannot cover labels, toolbar controls, or key views.
+     */
+    private static void forceBlackKeyboardSurface(ViewGroup root) {
+        if (root == null) return;
+        try {
+            root.setBackgroundColor(Color.BLACK);
+            int width = root.getWidth();
+            int height = root.getHeight();
+            if (width <= 0 || height <= 0) return;
+            forceBlackFullSizeBackgroundChildren(root, width, height);
+        } catch (Throwable error) {
+            android.util.Log.e("GboardCafe", "Failed to force black keyboard surface", error);
+        }
+    }
+
+    /**
+     * Some Gboard theme variants attach the wallpaper as a full-size child
+     * instead of the root background. Neutralize only non-key children that
+     * cover nearly the whole keyboard; all native key views are left untouched.
+     */
+    private static void forceBlackFullSizeBackgroundChildren(
+            ViewGroup parent, int rootWidth, int rootHeight) {
+        try {
+            for (int i = 0; i < parent.getChildCount(); i++) {
+                View child = parent.getChildAt(i);
+                if (child == null || isKey(child)) continue;
+
+                int childWidth = child.getWidth();
+                int childHeight = child.getHeight();
+                boolean fullSurface = childWidth >= rootWidth * 0.88f
+                        && childHeight >= rootHeight * 0.62f;
+
+                if (fullSurface) {
+                    child.setBackgroundColor(Color.BLACK);
+                    if (child instanceof ImageView) {
+                        ((ImageView) child).setImageDrawable(null);
+                    }
+                }
+
+                if (child instanceof ViewGroup) {
+                    forceBlackFullSizeBackgroundChildren(
+                            (ViewGroup) child, rootWidth, rootHeight);
+                }
+            }
+        } catch (Throwable error) {
+            android.util.Log.e("GboardCafe", "Failed to neutralize full-size keyboard background", error);
         }
     }
 
@@ -378,9 +441,11 @@ public final class GboardCafeRuntime {
             ArrayList<Integer> rowCenters = new ArrayList<>();
             int tolerance = dp(root, 16);
 
+            // Read the original, fully laid-out Gboard rows before moving anything.
             for (View key : allKeys) {
                 String shown = displayLabelForKey(key);
                 if (!isSingleLatinLetter(shown)) continue;
+
                 char letter = Character.toLowerCase(shown.charAt(0));
                 if (byLetter.put(letter, key) != null) return false;
 
@@ -397,14 +462,16 @@ public final class GboardCafeRuntime {
                         bestDistance = distance;
                     }
                 }
+
                 if (match >= 0) {
                     rows.get(match).add(key);
                     int size = rows.get(match).size();
-                    rowCenters.set(match, ((size - 1) * rowCenters.get(match)
-                            + centerY) / size);
+                    rowCenters.set(match,
+                            ((size - 1) * rowCenters.get(match) + centerY) / size);
                 } else {
                     int insertAt = 0;
-                    while (insertAt < rowCenters.size() && rowCenters.get(insertAt) < centerY) {
+                    while (insertAt < rowCenters.size()
+                            && rowCenters.get(insertAt) < centerY) {
                         insertAt++;
                     }
                     rowCenters.add(insertAt, centerY);
@@ -418,7 +485,7 @@ public final class GboardCafeRuntime {
                 if (!byLetter.containsKey(letter)) return false;
             }
 
-            final String[] wantedRows = {"qgfpwjlduh", "arszyneio", "tcxvbkm"};
+            final String[] wantedRows = {"qfpxzglduh", "arsyjneio", "tcwvbkm"};
             for (int row = 0; row < rows.size(); row++) {
                 ArrayList<View> keys = rows.get(row);
                 Collections.sort(keys, (left, right) -> {
@@ -438,22 +505,29 @@ public final class GboardCafeRuntime {
                 ArrayList<View> slots = rows.get(row);
                 String target = wantedRows[row];
                 for (int column = 0; column < target.length(); column++) {
+                    View slot = slots.get(column);
                     View targetKey = byLetter.get(target.charAt(column));
-                    replacements.put(slots.get(column), targetKey);
-                    if (slots.get(column) != targetKey) alreadyCorrect = false;
+                    replacements.put(slot, targetKey);
+                    if (slot != targetKey) alreadyCorrect = false;
                 }
             }
             if (alreadyCorrect) return true;
 
-            // Snapshot every affected parent, including non-letter keys and
-            // helper children. Detach all children first so cross-row moves work.
+            // Snapshot only the parents/slots that contain alphabet keys.
+            // The exact LayoutParams object belongs to each original position
+            // and will be transferred to the replacement key occupying that slot.
             Map<ViewGroup, ArrayList<View>> childrenByParent = new HashMap<>();
             Map<ViewGroup, ArrayList<ViewGroup.LayoutParams>> paramsByParent = new HashMap<>();
+            Set<View> alphabetSlots = new HashSet<>();
+
             for (ArrayList<View> row : rows) {
-                for (View key : row) {
-                    if (!(key.getParent() instanceof ViewGroup)) return false;
-                    ViewGroup parent = (ViewGroup) key.getParent();
+                for (View slot : row) {
+                    if (!(slot.getParent() instanceof ViewGroup)) return false;
+                    if (!alphabetSlots.add(slot)) return false;
+
+                    ViewGroup parent = (ViewGroup) slot.getParent();
                     if (childrenByParent.containsKey(parent)) continue;
+
                     ArrayList<View> children = new ArrayList<>();
                     ArrayList<ViewGroup.LayoutParams> params = new ArrayList<>();
                     for (int i = 0; i < parent.getChildCount(); i++) {
@@ -466,32 +540,65 @@ public final class GboardCafeRuntime {
                 }
             }
 
-            for (ViewGroup parent : childrenByParent.keySet()) parent.removeAllViews();
+            if (alphabetSlots.size() != 26 || replacements.size() != 26) return false;
+            Set<View> targetKeys = new HashSet<>(replacements.values());
+            if (targetKeys.size() != 26 || !alphabetSlots.containsAll(targetKeys)) return false;
 
+            // Validate every destination slot before changing the live hierarchy.
+            for (Map.Entry<ViewGroup, ArrayList<View>> entry : childrenByParent.entrySet()) {
+                ArrayList<View> children = entry.getValue();
+                ArrayList<ViewGroup.LayoutParams> params = paramsByParent.get(entry.getKey());
+                for (int i = 0; i < children.size(); i++) {
+                    View slot = children.get(i);
+                    if (replacements.containsKey(slot) && params.get(i) == null) return false;
+                }
+            }
+
+            // Detach only the 26 letter views. Shift, ?123, Backspace, Enter,
+            // emoji/language keys, spacers and their containers stay attached.
+            for (View slot : alphabetSlots) {
+                if (!(slot.getParent() instanceof ViewGroup)) return false;
+                ((ViewGroup) slot.getParent()).removeView(slot);
+            }
+
+            // Refill the exact original child positions. Non-letter children are
+            // never detached or assigned new LayoutParams; each letter receives
+            // the untouched LayoutParams object saved from its destination slot.
             for (Map.Entry<ViewGroup, ArrayList<View>> entry : childrenByParent.entrySet()) {
                 ViewGroup parent = entry.getKey();
                 ArrayList<View> originalChildren = entry.getValue();
                 ArrayList<ViewGroup.LayoutParams> originalParams = paramsByParent.get(parent);
+                int insertionIndex = 0;
+
                 for (int i = 0; i < originalChildren.size(); i++) {
                     View originalSlot = originalChildren.get(i);
                     View replacement = replacements.get(originalSlot);
-                    View child = replacement == null ? originalSlot : replacement;
-                    ViewGroup.LayoutParams params = layoutParamsForRow(
-                            parent, child, originalParams.get(i));
-                    parent.addView(child, params);
+
+                    if (replacement != null) {
+                        if (replacement.getParent() != null) {
+                            throw new IllegalStateException(
+                                    "Alphabet key was not detached from its original slot");
+                        }
+                        parent.addView(replacement, insertionIndex, originalParams.get(i));
+                    } else if (parent.indexOfChild(originalSlot) != insertionIndex) {
+                        throw new IllegalStateException(
+                                "A non-letter Gboard child changed its original position");
+                    }
+
+                    insertionIndex++;
                 }
+
                 parent.requestLayout();
                 parent.invalidate();
             }
             return true;
         } catch (Throwable error) {
-            lastLayoutStatus = "Reordenação direta falhou: "
+            lastLayoutStatus = "Reordenação por slots originais falhou: "
                     + error.getClass().getSimpleName() + ": " + error.getMessage();
             android.util.Log.e("GboardCafe", lastLayoutStatus, error);
             return false;
         }
     }
-
 
     private static boolean isEnterSoftKey(View view) {
         try {
@@ -1264,7 +1371,7 @@ public final class GboardCafeRuntime {
             if (!letterTokens.containsKey(letter)) return null;
         }
 
-        String[] targetRows = {"qgfpwjlduh", "arszyneio", "tcxvbkm"};
+        String[] targetRows = {"qfpxzglduh", "arsyjneio", "tcwvbkm"};
         JSONArray result = new JSONArray();
         int targetIndex = 0;
         for (int rowIndex = 0; rowIndex < originalRows.length(); rowIndex++) {
@@ -1360,7 +1467,7 @@ public final class GboardCafeRuntime {
                                 && desired.toString().equals(actual.toString())) {
                             p.edit().putBoolean(DEFAULT_LAYOUT_PRESET_APPLIED_KEY, true)
                                     .remove(DEFAULT_LAYOUT_PRESET_PENDING_KEY).apply();
-                            lastLayoutStatus = "Preset Qgfpwjlduh / Arszyneio / Tcxvbkm aplicado";
+                            lastLayoutStatus = "Preset Qfpxzglduh / Arsyjneio / Tcwvbkm aplicado";
                             lastAppliedKeyCount = 26;
                             lastAppliedRowCount = 3;
                         } else if (p.getBoolean(DEFAULT_LAYOUT_PRESET_PENDING_KEY, false)) {
@@ -1502,7 +1609,8 @@ public final class GboardCafeRuntime {
             return new ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT);
         } catch (Throwable ignored) {
-            return new ViewGroup.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT);
+            return new ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT);
         }
     }
 
@@ -1929,5 +2037,7 @@ public final class GboardCafeRuntime {
 
         @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }
     }
+
+
 
 }

@@ -8,11 +8,12 @@ import com.android.tools.smali.dexlib2.Opcode
 /** Captures and reapplies the user's editable key arrangement. */
 val gboardCafeKeyLayoutEditorPatch = bytecodePatch(
     name = "QGFPW Layout + Black Gray Colors",
-    description = "Applies Qgfpwjlduh / Arszyneio / Tcxvbkm and recolors letter labels #3B3B3B and blue action keys #000000.",
+    description = "Applies Qfpxzglduh / Arsyjneio / Tcwvbkm, gray glyphs #3B3B3B and solid-black keyboard surface with theme-controlled special keys.",
     default = true,
 ) {
     compatibleWith(gboardCafeCompatibility)
     dependsOn(gboardCafeSettingsIntegrationPatch)
+    dependsOn(gboardCafeNativeSpecialKeyColorsPatch)
 
     execute {
         val keyboardLayout = Fingerprint(
