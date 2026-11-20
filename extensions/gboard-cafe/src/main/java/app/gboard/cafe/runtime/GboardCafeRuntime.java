@@ -27,6 +27,8 @@ import android.widget.TextView;
 
 import org.json.JSONArray;
 
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
@@ -1928,6 +1930,47 @@ public final class GboardCafeRuntime {
         }
 
         @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }
+    }
+
+
+    /*
+     * Appends a final theme rule after Gboard has merged its built-in and
+     * selected theme stylesheets. This is deliberately limited to the
+     * keyboard surface selectors; action keys and the spacebar keep their
+     * selected theme colors.
+     *
+     * Lrsg.a(Laali, String, InputStream) is Gboard 18.5.4's own binarypb
+     * stylesheet parser. Reusing it avoids hand-editing generated protobuf
+     * objects and runs only on the theme-merge path, never while typing.
+     */
+    private static final byte[] BLACK_KEYBOARD_SURFACE_OVERLAY =
+            Base64.decode("CiAKFC5rZXlib2FyZC1iYWNrZ3JvdW5kEAEaBgiAgID4DwowCiQud2lkZ2V0LWtleWJvYXJkLmtleWJvYXJkLWJhY2tncm91bmQQARoGCICAgPgPCjsKLy53aWRnZXQta2V5Ym9hcmQua2V5Ym9hcmQtYmFja2dyb3VuZC5ob3Jpem9udGFsEAEaBgiAgID4Dwo5Ci0ud2lkZ2V0LWtleWJvYXJkLmtleWJvYXJkLWJhY2tncm91bmQudmVydGljYWwQARoGCICAgPgPCiwKIC5rZXlib2FyZC1iYWNrZ3JvdW5kLmZvci1wcmV2aWV3EAEaBgiAgID4DwofChMua2V5Ym9hcmQtYmFzZS1hcmVhEAEaBgiAgID4DwoyCiYua2V5Ym9hcmQtYm9keS1hcmVhLmZvci1ub24tcHJpbWUtYm9keRABGgYIgICA+A8SMwopZGVmYXVsdF9rZXlib2FyZF9iYWNrZ3JvdW5kX3ByaW1hcnlfY29sb3ISBgiAgID4DxI1CitkZWZhdWx0X2tleWJvYXJkX2JhY2tncm91bmRfc2Vjb25kYXJ5X2NvbG9yEgYIgICA+A8SMgooZGVmYXVsdF9rZXlib2FyZF9iYWNrZ3JvdW5kX2hlYWRlcl9jb2xvchIGCICAgPgP", Base64.DEFAULT);
+
+    public static void forceBlackKeyboardBackground(Object builder) {
+        if (builder == null) return;
+        ByteArrayInputStream input = null;
+        try {
+            ClassLoader loader = builder.getClass().getClassLoader();
+            Class<?> parserClass = Class.forName("Lrsg", true, loader);
+            Method parser = parserClass.getDeclaredMethod(
+                    "a", builder.getClass(), String.class, InputStream.class);
+            parser.setAccessible(true);
+            input = new ByteArrayInputStream(BLACK_KEYBOARD_SURFACE_OVERLAY);
+            parser.invoke(
+                    null,
+                    builder,
+                    "gboard_cafe_black_keyboard_surface.binarypb",
+                    input);
+        } catch (Throwable error) {
+            android.util.Log.e(
+                    "GboardCafe",
+                    "Failed to apply final black keyboard-surface stylesheet",
+                    error);
+        } finally {
+            if (input != null) {
+                try { input.close(); } catch (Throwable ignored) {}
+            }
+        }
     }
 
 }
