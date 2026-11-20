@@ -234,6 +234,10 @@ public final class GboardCafeRuntime {
                         }
                     }
 
+                    // Correct only the L key's size using its immediate row neighbour.
+                    // Do not rebalance the row or modify any other letter.
+                    correctLKeyWidth(root);
+
                     // Replace the selected theme's full-surface background after Gboard
                     // lays it out. Key views are excluded, so the active theme still owns
                     // the spacebar, ?123 and Enter key backgrounds.
@@ -1537,6 +1541,107 @@ public final class GboardCafeRuntime {
                 rebalanceRow(groups.get(rowIndex), activeByRow.get(rowIndex));
             }
         } catch (Throwable ignored) {}
+    }
+
+    /**
+     * Repairs only the Latin L key when its slot inherited a different width
+     * or horizontal spacing from the original Gboard key it replaced.
+     *
+     * The requested arrangement places L immediately after G in the first row.
+     * Prefer G as the reference when both keys share a parent; otherwise use the
+     * nearest Latin-letter sibling in L's own row container. Only L's width,
+     * weight and horizontal margins are copied. No other key or row is changed.
+     */
+    private static void correctLKeyWidth(ViewGroup root) {
+        try {
+            ArrayList<View> keys = new ArrayList<>();
+            collectKeyViews(root, keys);
+
+            View lKey = null;
+            View gKey = null;
+            for (View key : keys) {
+                String shown = displayLabelForKey(key);
+                if (!isSingleLatinLetter(shown)) continue;
+                char letter = Character.toLowerCase(shown.charAt(0));
+                if (letter == 'l' && lKey == null) lKey = key;
+                else if (letter == 'g' && gKey == null) gKey = key;
+            }
+            if (lKey == null || !(lKey.getParent() instanceof ViewGroup)) return;
+
+            ViewGroup parent = (ViewGroup) lKey.getParent();
+            View reference = gKey != null && gKey.getParent() == parent ? gKey : null;
+            if (reference == null) {
+                int[] lLocation = new int[2];
+                lKey.getLocationOnScreen(lLocation);
+                int lCenterY = lLocation[1] + lKey.getHeight() / 2;
+                int lCenterX = lLocation[0] + lKey.getWidth() / 2;
+                int bestDistance = Integer.MAX_VALUE;
+                int rowTolerance = dp(root, 16);
+
+                for (int i = 0; i < parent.getChildCount(); i++) {
+                    View candidate = parent.getChildAt(i);
+                    if (candidate == lKey || !isKey(candidate)) continue;
+                    if (!isSingleLatinLetter(displayLabelForKey(candidate))) continue;
+
+                    int[] location = new int[2];
+                    candidate.getLocationOnScreen(location);
+                    int centerY = location[1] + candidate.getHeight() / 2;
+                    if (Math.abs(centerY - lCenterY) > rowTolerance) continue;
+
+                    int centerX = location[0] + candidate.getWidth() / 2;
+                    int distance = Math.abs(centerX - lCenterX);
+                    if (distance < bestDistance) {
+                        bestDistance = distance;
+                        reference = candidate;
+                    }
+                }
+            }
+            if (reference == null) return;
+
+            ViewGroup.LayoutParams target = lKey.getLayoutParams();
+            ViewGroup.LayoutParams source = reference.getLayoutParams();
+            if (target == null || source == null
+                    || target.getClass() != source.getClass()) return;
+
+            boolean changed = target.width != source.width;
+            target.width = source.width;
+
+            if (target instanceof android.view.ViewGroup.MarginLayoutParams
+                    && source instanceof android.view.ViewGroup.MarginLayoutParams) {
+                android.view.ViewGroup.MarginLayoutParams targetMargins =
+                        (android.view.ViewGroup.MarginLayoutParams) target;
+                android.view.ViewGroup.MarginLayoutParams sourceMargins =
+                        (android.view.ViewGroup.MarginLayoutParams) source;
+                changed |= targetMargins.leftMargin != sourceMargins.leftMargin
+                        || targetMargins.rightMargin != sourceMargins.rightMargin;
+                targetMargins.leftMargin = sourceMargins.leftMargin;
+                targetMargins.rightMargin = sourceMargins.rightMargin;
+                targetMargins.setMarginStart(sourceMargins.getMarginStart());
+                targetMargins.setMarginEnd(sourceMargins.getMarginEnd());
+            }
+
+            if (target instanceof LinearLayout.LayoutParams
+                    && source instanceof LinearLayout.LayoutParams) {
+                LinearLayout.LayoutParams targetLinear =
+                        (LinearLayout.LayoutParams) target;
+                LinearLayout.LayoutParams sourceLinear =
+                        (LinearLayout.LayoutParams) source;
+                changed |= targetLinear.weight != sourceLinear.weight;
+                targetLinear.weight = sourceLinear.weight;
+                targetLinear.gravity = sourceLinear.gravity;
+            }
+
+            if (changed) {
+                lKey.setLayoutParams(target);
+                parent.requestLayout();
+                parent.invalidate();
+                android.util.Log.i("GboardCafe",
+                        "Corrected only L key width using "
+                                + displayLabelForKey(reference) + " as row reference");
+            }
+        } catch (Throwable error) {
+            android.util.Log.e("GboardCafe", "Failed to correct L key width", error);
+        }
     }
 
     private static ViewGroup.LayoutParams layoutParamsForRow(
