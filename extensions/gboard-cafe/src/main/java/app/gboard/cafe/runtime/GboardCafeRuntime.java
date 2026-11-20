@@ -479,7 +479,7 @@ public final class GboardCafeRuntime {
                 if (!byLetter.containsKey(letter)) return false;
             }
 
-            final String[] wantedRows = {"qfpxzglduh", "arszyjneio", "tcwvbkm"};
+            final String[] wantedRows = {"qfpxzglduh", "arsyjneio", "tcwvbkm"};
             for (int row = 0; row < rows.size(); row++) {
                 ArrayList<View> keys = rows.get(row);
                 Collections.sort(keys, (left, right) -> {
@@ -1325,7 +1325,7 @@ public final class GboardCafeRuntime {
             if (!letterTokens.containsKey(letter)) return null;
         }
 
-        String[] targetRows = {"qfpxzglduh", "arszyjneio", "tcwvbkm"};
+        String[] targetRows = {"qfpxzglduh", "arsyjneio", "tcwvbkm"};
         JSONArray result = new JSONArray();
         int targetIndex = 0;
         for (int rowIndex = 0; rowIndex < originalRows.length(); rowIndex++) {
