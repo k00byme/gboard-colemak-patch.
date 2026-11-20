@@ -1421,7 +1421,7 @@ public final class GboardCafeRuntime {
                                 && desired.toString().equals(actual.toString())) {
                             p.edit().putBoolean(DEFAULT_LAYOUT_PRESET_APPLIED_KEY, true)
                                     .remove(DEFAULT_LAYOUT_PRESET_PENDING_KEY).apply();
-                            lastLayoutStatus = "Preset Qgfpwjlduh / Arszyneio / Tcxvbkm aplicado";
+                            lastLayoutStatus = "Preset Qfpxzglduh / Arsyjneio / Tcwvbkm aplicado";
                             lastAppliedKeyCount = 26;
                             lastAppliedRowCount = 3;
                         } else if (p.getBoolean(DEFAULT_LAYOUT_PRESET_PENDING_KEY, false)) {
