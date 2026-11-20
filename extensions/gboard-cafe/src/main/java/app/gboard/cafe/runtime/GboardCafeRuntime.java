@@ -224,7 +224,7 @@ public final class GboardCafeRuntime {
                     if (!APPLIED_QGFPW_ROOTS.containsKey(root)) {
                         if (applyForcedQgfpwLayout(root)) {
                             APPLIED_QGFPW_ROOTS.put(root, Boolean.TRUE);
-                            lastLayoutStatus = "Preset Qgfpwjlduh / Arszyneio / Tcxvbkm aplicado diretamente";
+                            lastLayoutStatus = "Preset Qfpxzglduh / Arsyjneio / Tcwvbkm aplicado diretamente";
                             lastAppliedKeyCount = 26;
                             lastAppliedRowCount = 3;
                         } else {
@@ -479,7 +479,7 @@ public final class GboardCafeRuntime {
                 if (!byLetter.containsKey(letter)) return false;
             }
 
-            final String[] wantedRows = {"qgfpwjlduh", "arszyneio", "tcxvbkm"};
+            final String[] wantedRows = {"qfpxzglduh", "arszyjneio", "tcwvbkm"};
             for (int row = 0; row < rows.size(); row++) {
                 ArrayList<View> keys = rows.get(row);
                 Collections.sort(keys, (left, right) -> {
@@ -1325,7 +1325,7 @@ public final class GboardCafeRuntime {
             if (!letterTokens.containsKey(letter)) return null;
         }
 
-        String[] targetRows = {"qgfpwjlduh", "arszyneio", "tcxvbkm"};
+        String[] targetRows = {"qfpxzglduh", "arszyjneio", "tcwvbkm"};
         JSONArray result = new JSONArray();
         int targetIndex = 0;
         for (int rowIndex = 0; rowIndex < originalRows.length(); rowIndex++) {
