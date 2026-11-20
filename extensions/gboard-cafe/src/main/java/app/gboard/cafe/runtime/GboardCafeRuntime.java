@@ -1710,15 +1710,6 @@ public final class GboardCafeRuntime {
         return sorted.get(sorted.size() / 2);
     }
 
-count);
-            if (count > bestCount) {
-                best = value;
-                bestCount = count;
-            }
-        }
-        return best;
-    }
-
     private static void correctLetterWidth(
             ViewGroup root, char targetLetter, char preferredLetter) {
         try {
