@@ -234,9 +234,7 @@ public final class GboardCafeRuntime {
                         }
                     }
 
-                    // Normalize all 26 Latin key slots by row, without changing
-                    // the layout parameters of Shift, Backspace or other special keys.
-                    normalizeAlphabetRowWidths(root);
+
 
                     // Replace the selected theme's full-surface background after Gboard
                     // lays it out. Key views are excluded, so the active theme still owns
@@ -443,9 +441,11 @@ public final class GboardCafeRuntime {
             ArrayList<Integer> rowCenters = new ArrayList<>();
             int tolerance = dp(root, 16);
 
+            // Read the original, fully laid-out Gboard rows before moving anything.
             for (View key : allKeys) {
                 String shown = displayLabelForKey(key);
                 if (!isSingleLatinLetter(shown)) continue;
+
                 char letter = Character.toLowerCase(shown.charAt(0));
                 if (byLetter.put(letter, key) != null) return false;
 
@@ -462,14 +462,16 @@ public final class GboardCafeRuntime {
                         bestDistance = distance;
                     }
                 }
+
                 if (match >= 0) {
                     rows.get(match).add(key);
                     int size = rows.get(match).size();
-                    rowCenters.set(match, ((size - 1) * rowCenters.get(match)
-                            + centerY) / size);
+                    rowCenters.set(match,
+                            ((size - 1) * rowCenters.get(match) + centerY) / size);
                 } else {
                     int insertAt = 0;
-                    while (insertAt < rowCenters.size() && rowCenters.get(insertAt) < centerY) {
+                    while (insertAt < rowCenters.size()
+                            && rowCenters.get(insertAt) < centerY) {
                         insertAt++;
                     }
                     rowCenters.add(insertAt, centerY);
@@ -503,22 +505,29 @@ public final class GboardCafeRuntime {
                 ArrayList<View> slots = rows.get(row);
                 String target = wantedRows[row];
                 for (int column = 0; column < target.length(); column++) {
+                    View slot = slots.get(column);
                     View targetKey = byLetter.get(target.charAt(column));
-                    replacements.put(slots.get(column), targetKey);
-                    if (slots.get(column) != targetKey) alreadyCorrect = false;
+                    replacements.put(slot, targetKey);
+                    if (slot != targetKey) alreadyCorrect = false;
                 }
             }
             if (alreadyCorrect) return true;
 
-            // Snapshot every affected parent, including non-letter keys and
-            // helper children. Detach all children first so cross-row moves work.
+            // Snapshot only the parents/slots that contain alphabet keys.
+            // The exact LayoutParams object belongs to each original position
+            // and will be transferred to the replacement key occupying that slot.
             Map<ViewGroup, ArrayList<View>> childrenByParent = new HashMap<>();
             Map<ViewGroup, ArrayList<ViewGroup.LayoutParams>> paramsByParent = new HashMap<>();
+            Set<View> alphabetSlots = new HashSet<>();
+
             for (ArrayList<View> row : rows) {
-                for (View key : row) {
-                    if (!(key.getParent() instanceof ViewGroup)) return false;
-                    ViewGroup parent = (ViewGroup) key.getParent();
+                for (View slot : row) {
+                    if (!(slot.getParent() instanceof ViewGroup)) return false;
+                    if (!alphabetSlots.add(slot)) return false;
+
+                    ViewGroup parent = (ViewGroup) slot.getParent();
                     if (childrenByParent.containsKey(parent)) continue;
+
                     ArrayList<View> children = new ArrayList<>();
                     ArrayList<ViewGroup.LayoutParams> params = new ArrayList<>();
                     for (int i = 0; i < parent.getChildCount(); i++) {
@@ -531,32 +540,66 @@ public final class GboardCafeRuntime {
                 }
             }
 
-            for (ViewGroup parent : childrenByParent.keySet()) parent.removeAllViews();
+            if (alphabetSlots.size() != 26 || replacements.size() != 26) return false;
+            Set<View> targetKeys = new HashSet<>(replacements.values());
+            if (targetKeys.size() != 26 || !alphabetSlots.containsAll(targetKeys)) return false;
 
+            // Validate every destination slot before changing the live hierarchy.
+            for (Map.Entry<ViewGroup, ArrayList<View>> entry : childrenByParent.entrySet()) {
+                ArrayList<View> children = entry.getValue();
+                ArrayList<ViewGroup.LayoutParams> params = paramsByParent.get(entry.getKey());
+                for (int i = 0; i < children.size(); i++) {
+                    View slot = children.get(i);
+                    if (replacements.containsKey(slot) && params.get(i) == null) return false;
+                }
+            }
+
+            // Detach only the 26 letter views. Shift, ?123, Backspace, Enter,
+            // emoji/language keys, spacers and their containers stay attached.
+            for (View slot : alphabetSlots) {
+                ViewParent rawParent = slot.getParent();
+                if (!(rawParent instanceof ViewGroup)) return false;
+                ((ViewGroup) rawParent).removeView(slot);
+            }
+
+            // Refill the exact original child positions. Non-letter children are
+            // never detached or assigned new LayoutParams; each letter receives
+            // the untouched LayoutParams object saved from its destination slot.
             for (Map.Entry<ViewGroup, ArrayList<View>> entry : childrenByParent.entrySet()) {
                 ViewGroup parent = entry.getKey();
                 ArrayList<View> originalChildren = entry.getValue();
                 ArrayList<ViewGroup.LayoutParams> originalParams = paramsByParent.get(parent);
+                int insertionIndex = 0;
+
                 for (int i = 0; i < originalChildren.size(); i++) {
                     View originalSlot = originalChildren.get(i);
                     View replacement = replacements.get(originalSlot);
-                    View child = replacement == null ? originalSlot : replacement;
-                    ViewGroup.LayoutParams params = layoutParamsForRow(
-                            parent, child, originalParams.get(i));
-                    parent.addView(child, params);
+
+                    if (replacement != null) {
+                        if (replacement.getParent() != null) {
+                            throw new IllegalStateException(
+                                    "Alphabet key was not detached from its original slot");
+                        }
+                        parent.addView(replacement, insertionIndex, originalParams.get(i));
+                    } else if (parent.indexOfChild(originalSlot) != insertionIndex) {
+                        throw new IllegalStateException(
+                                "A non-letter Gboard child changed its original position");
+                    }
+
+                    insertionIndex++;
                 }
+
                 parent.requestLayout();
                 parent.invalidate();
             }
             return true;
         } catch (Throwable error) {
-            lastLayoutStatus = "Reordenação direta falhou: "
+            lastLayoutStatus = "Reordenação por slots originais falhou: "
                     + error.getClass().getSimpleName() + ": " + error.getMessage();
             android.util.Log.e("GboardCafe", lastLayoutStatus, error);
             return false;
         }
     }
-
 
     private static boolean isEnterSoftKey(View view) {
         try {
@@ -1571,167 +1614,7 @@ public final class GboardCafeRuntime {
      * row slot (the direct child of the horizontal LinearLayout), not the
      * SoftKeyView itself. Special keys and their LayoutParams stay untouched.
      */
-    private static void normalizeAlphabetRowWidths(ViewGroup root) {
-        try {
-            ArrayList<View> allKeys = new ArrayList<>();
-            collectKeyViews(root, allKeys);
-
-            Map<Character, View> byLetter = new HashMap<>();
-            ArrayList<ArrayList<View>> rows = new ArrayList<>();
-            ArrayList<Integer> rowCenters = new ArrayList<>();
-            int tolerance = dp(root, 16);
-
-            for (View key : allKeys) {
-                String shown = displayLabelForKey(key);
-                if (!isSingleLatinLetter(shown)) continue;
-
-                char letter = Character.toLowerCase(shown.charAt(0));
-                if (byLetter.put(letter, key) != null) return;
-
-                int[] location = new int[2];
-                key.getLocationOnScreen(location);
-                int centerY = location[1] + key.getHeight() / 2;
-
-                int match = -1;
-                int bestDistance = Integer.MAX_VALUE;
-                for (int i = 0; i < rowCenters.size(); i++) {
-                    int distance = Math.abs(rowCenters.get(i) - centerY);
-                    if (distance <= tolerance && distance < bestDistance) {
-                        match = i;
-                        bestDistance = distance;
-                    }
-                }
-
-                if (match >= 0) {
-                    rows.get(match).add(key);
-                    int size = rows.get(match).size();
-                    rowCenters.set(match,
-                            ((size - 1) * rowCenters.get(match) + centerY) / size);
-                } else {
-                    int insertAt = 0;
-                    while (insertAt < rowCenters.size()
-                            && rowCenters.get(insertAt) < centerY) {
-                        insertAt++;
-                    }
-                    rowCenters.add(insertAt, centerY);
-                    rows.add(insertAt, new ArrayList<>());
-                    rows.get(insertAt).add(key);
-                }
-            }
-
-            if (byLetter.size() != 26 || rows.size() != 3) return;
-            for (char letter = 'a'; letter <= 'z'; letter++) {
-                if (!byLetter.containsKey(letter)) return;
-            }
-
-            final int[] expectedCounts = {10, 9, 7};
-            for (int rowIndex = 0; rowIndex < rows.size(); rowIndex++) {
-                ArrayList<View> rowKeys = rows.get(rowIndex);
-                if (rowKeys.size() != expectedCounts[rowIndex]) return;
-                normalizeOneAlphabetRow(root, rowKeys, tolerance);
-            }
-        } catch (Throwable error) {
-            android.util.Log.e("GboardCafe",
-                    "Failed to normalize alphabet row widths", error);
-        }
-    }
-
-    /**
-     * Finds the nearest horizontal LinearLayout containing exactly this visual
-     * alphabet row. Keys may be direct children or nested inside one slot view.
-     */
-    private static void normalizeOneAlphabetRow(
-            ViewGroup root, ArrayList<View> rowKeys, int tolerance) {
-        try {
-            if (rowKeys == null || rowKeys.isEmpty()) return;
-
-            int[] firstLocation = new int[2];
-            rowKeys.get(0).getLocationOnScreen(firstLocation);
-            int rowCenterY = firstLocation[1] + rowKeys.get(0).getHeight() / 2;
-
-            Set<View> expected = new HashSet<>(rowKeys);
-            LinearLayout rowContainer = null;
-
-            View cursor = rowKeys.get(0);
-            while (cursor.getParent() instanceof ViewGroup) {
-                ViewGroup ancestor = (ViewGroup) cursor.getParent();
-                if (ancestor instanceof LinearLayout
-                        && ((LinearLayout) ancestor).getOrientation()
-                                == LinearLayout.HORIZONTAL) {
-                    ArrayList<View> descendants = new ArrayList<>();
-                    collectKeyViews(ancestor, descendants);
-
-                    Set<View> foundInThisRow = new HashSet<>();
-                    for (View candidate : descendants) {
-                        if (!isSingleLatinLetter(displayLabelForKey(candidate))) continue;
-                        int[] location = new int[2];
-                        candidate.getLocationOnScreen(location);
-                        int centerY = location[1] + candidate.getHeight() / 2;
-                        if (Math.abs(centerY - rowCenterY) <= tolerance) {
-                            foundInThisRow.add(candidate);
-                        }
-                    }
-
-                    if (foundInThisRow.equals(expected)) {
-                        rowContainer = (LinearLayout) ancestor;
-                        break;
-                    }
-                }
-
-                if (ancestor == root) break;
-                cursor = ancestor;
-            }
-
-            if (rowContainer == null) {
-                android.util.Log.w("GboardCafe",
-                        "Could not find one horizontal row container for "
-                                + rowKeys.size() + " alphabet keys");
-                return;
-            }
-
-            ArrayList<View> slots = new ArrayList<>();
-            Set<View> uniqueSlots = new HashSet<>();
-            for (View key : rowKeys) {
-                View slot = key;
-                while (slot.getParent() != rowContainer) {
-                    if (!(slot.getParent() instanceof View)) return;
-                    slot = (View) slot.getParent();
-                }
-                if (!uniqueSlots.add(slot)) return;
-                if (!(slot.getLayoutParams() instanceof LinearLayout.LayoutParams)) return;
-                slots.add(slot);
-            }
-            if (slots.size() != rowKeys.size()) return;
-
-            ArrayList<Integer> leftMargins = new ArrayList<>();
-            ArrayList<Integer> rightMargins = new ArrayList<>();
-            ArrayList<Integer> startMargins = new ArrayList<>();
-            ArrayList<Integer> endMargins = new ArrayList<>();
-
-            for (View slot : slots) {
-                LinearLayout.LayoutParams lp =
-                        (LinearLayout.LayoutParams) slot.getLayoutParams();
-                leftMargins.add(lp.leftMargin);
-                rightMargins.add(lp.rightMargin);
-                startMargins.add(lp.getMarginStart());
-                endMargins.add(lp.getMarginEnd());
-            }
-
-            // Use a row-wide median for horizontal spacing too. This removes
-            // inherited edge-slot spacing without changing vertical alignment.
-            int commonLeft = medianInt(leftMargins);
-            int commonRight = medianInt(rightMargins);
-            int commonStart = medianInt(startMargins);
-            int commonEnd = medianInt(endMargins);
-
-            boolean changed = false;
-            for (View slot : slots) {
-                LinearLayout.LayoutParams lp =
-                        (LinearLayout.LayoutParams) slot.getLayoutParams();
-                if (lp.width != 0 || Math.abs(lp.weight - 1f) > 0.0001f
-                        || lp.leftMargin != commonLeft || lp.rightMargin != commonRight
-                        || lp.getMarginStart() != commonStart
-                        || lp.getMarginEnd() != commonEnd) {
+.getMarginEnd() != commonEnd) {
                     changed = true;
                 }
 
@@ -1783,8 +1666,7 @@ public final class GboardCafeRuntime {
     private static ViewGroup.LayoutParams layoutParamsForRow(
             ViewGroup target, View key, ViewGroup.LayoutParams original) {
         try {
-            if (target instanceof LinearLayout
-                    && ((LinearLayout) target).getOrientation() == LinearLayout.HORIZONTAL) {
+            if (target instanceof LinearLayout) {
                 LinearLayout.LayoutParams params;
                 if (original instanceof LinearLayout.LayoutParams) {
                     params = new LinearLayout.LayoutParams((LinearLayout.LayoutParams) original);
@@ -1792,38 +1674,21 @@ public final class GboardCafeRuntime {
                     params = new LinearLayout.LayoutParams(
                             (LinearLayout.LayoutParams) key.getLayoutParams());
                 } else {
-                    params = new LinearLayout.LayoutParams(
-                            0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
+                    params = new LinearLayout.LayoutParams(0,
+                            ViewGroup.LayoutParams.MATCH_PARENT, 1f);
                 }
-
-                // Native Latin letters must use equal row-slot weights. Non-letter
-                // keys keep their original sizing so Shift/Backspace/action keys
-                // are not included in the alphabet normalization.
-                if (isSingleLatinLetter(displayLabelForKey(key))) {
-                    params.width = 0;
-                    params.weight = 1f;
-                } else {
-                    float weight = params.weight > 0f ? params.weight
-                            : (params.width > 0 ? Math.max(1, params.width) : 1f);
-                    params.width = 0;
-                    params.weight = weight;
-                }
+                float weight = params.weight > 0f ? params.weight
+                        : (params.width > 0 ? Math.max(1, params.width) : 1f);
+                params.width = 0;
+                params.weight = weight;
                 return params;
             }
-
             if (original != null) return original;
-            if (target instanceof LinearLayout) {
-                return new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.WRAP_CONTENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT);
-            }
             return new ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT);
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT);
         } catch (Throwable ignored) {
             return new ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT);
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT);
         }
     }
 
