@@ -1779,7 +1779,12 @@ public final class GboardCafeRuntime {
         return sorted.get(sorted.size() / 2);
     }
 
-t instanceof LinearLayout) {
+
+    private static ViewGroup.LayoutParams layoutParamsForRow(
+            ViewGroup target, View key, ViewGroup.LayoutParams original) {
+        try {
+            if (target instanceof LinearLayout
+                    && ((LinearLayout) target).getOrientation() == LinearLayout.HORIZONTAL) {
                 LinearLayout.LayoutParams params;
                 if (original instanceof LinearLayout.LayoutParams) {
                     params = new LinearLayout.LayoutParams((LinearLayout.LayoutParams) original);
@@ -1787,20 +1792,38 @@ t instanceof LinearLayout) {
                     params = new LinearLayout.LayoutParams(
                             (LinearLayout.LayoutParams) key.getLayoutParams());
                 } else {
-                    params = new LinearLayout.LayoutParams(0,
-                            ViewGroup.LayoutParams.MATCH_PARENT, 1f);
+                    params = new LinearLayout.LayoutParams(
+                            0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
                 }
-                float weight = params.weight > 0f ? params.weight
-                        : (params.width > 0 ? Math.max(1, params.width) : 1f);
-                params.width = 0;
-                params.weight = weight;
+
+                // Native Latin letters must use equal row-slot weights. Non-letter
+                // keys keep their original sizing so Shift/Backspace/action keys
+                // are not included in the alphabet normalization.
+                if (isSingleLatinLetter(displayLabelForKey(key))) {
+                    params.width = 0;
+                    params.weight = 1f;
+                } else {
+                    float weight = params.weight > 0f ? params.weight
+                            : (params.width > 0 ? Math.max(1, params.width) : 1f);
+                    params.width = 0;
+                    params.weight = weight;
+                }
                 return params;
             }
+
             if (original != null) return original;
+            if (target instanceof LinearLayout) {
+                return new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT);
+            }
             return new ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT);
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT);
         } catch (Throwable ignored) {
-            return new ViewGroup.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT);
+            return new ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT);
         }
     }
 
